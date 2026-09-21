@@ -377,26 +377,63 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """Execute a task with domain-aware routing."""
+    """Execute a task with domain-aware routing — real dispatch, real answer."""
+    import time
+
     project = args.project or "wsb-alpha"
     task_type = args.task_type or "coding"
     prompt = args.prompt or ""
-    
+
     if not prompt:
         print(fail_line("Error: --prompt required", enabled=supports_color(sys.stderr)), file=sys.stderr)
         return 1
-    
-    router = MultiProjectRouter()
-    decision = router.pick(project, task_type)
-    
-    print(f"{color('Routing to:', ANSI.ACCENT)} {decision.model} ({decision.domain})")
-    print(f"{color('Chain:', ANSI.ACCENT)} {' -> '.join(decision.chain)}")
-    print(f"{color('Expected latency:', ANSI.ACCENT)} {decision.expected_latency_ms:.1f}ms")
-    print(f"\n{color('Prompt:', ANSI.ACCENT)} {prompt[:100]}...")
-    print(f"\n{hint('[Simulated execution - would dispatch to ' + decision.model + ']')}")
-    
-    # In real implementation, would call the model via gateway
-    return 0
+
+    config = load_config()
+    contexts = {c.name: c for c in build_project_contexts(config, "coder")}
+    if project not in contexts:
+        print(fail_line(f"Error: unknown project {project!r} (see reliability.config.json projects.*)",
+                        enabled=supports_color(sys.stderr)), file=sys.stderr)
+        return 1
+    ctx = contexts[project]
+
+    task_id = f"task-{int(time.time()) % 100000:05d}"
+    ledger = DelegationLedger(ctx.ledger_path)
+    router_fn = make_router_fn(ctx, SHARED, config)
+    orch = Orchestrator(ledger=ledger, router_fn=router_fn)
+
+    if not args.json:
+        print(f"{color('Dispatching:', ANSI.ACCENT)} {task_id} -> {project} [{task_type}]")
+        print(f"{color('Gateway:', ANSI.ACCENT)} {type(SHARED.adapter).__name__}")
+
+    dag = orch.decompose(prompt, [{"task_id": task_id, "prompt": prompt}])
+    dag = orch.run(dag, task_type=task_type)
+    node = dag.nodes[task_id]
+
+    result = {
+        "task_id": task_id,
+        "project": project,
+        "task_type": task_type,
+        "state": node.state.name,
+        "model_id": node.model_id,
+        "confidence": float(node.confidence or 0.0),
+        "text": node.result or "",
+        "ledger": str(ctx.ledger_path),
+    }
+    if node.state.name != "SUCCEEDED":
+        result["error"] = getattr(node, "error", None) or "dispatch did not succeed (see ledger)"
+
+    if args.json:
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        mark = ok_line if node.state.name == "SUCCEEDED" else fail_line
+        print(mark(f"{task_id} {node.state.name} via {node.model_id} "
+                   f"(confidence {result['confidence']:.2f})"))
+        print(separator())
+        print(result["text"] or "(empty response)")
+        print(separator())
+        print(hint(f"Ledger: {result['ledger']}"))
+
+    return 0 if node.state.name == "SUCCEEDED" else 1
 
 
 def build_parser() -> argparse.ArgumentParser:

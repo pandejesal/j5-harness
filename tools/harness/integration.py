@@ -41,7 +41,7 @@ from tools.latency.context_compression import (
 from tools.router.fallback_chain import FallbackChainBuilder
 from tools.router.feedback_loop import FeedbackLoop
 from tools.router.free_model_router import FreeModelRouter
-from tools.router.gateway_adapters import GatewayError, ZenGatewayAdapter
+from tools.router.gateway_adapters import GatewayError, GatewayInterface, ZenGatewayAdapter
 from tools.router.health_probe import HealthTracker
 from tools.router.model_registry import MODELS, default_chain
 from tools.skills.ecosystem.skill_hub import SkillHub
@@ -84,7 +84,7 @@ class SharedState:
     feedback: FeedbackLoop
     chain_builder: FallbackChainBuilder
     router: FreeModelRouter
-    adapter: ZenGatewayAdapter
+    adapter: GatewayInterface
     cache: MultiTierCache
 
 
@@ -141,11 +141,34 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
         return json.load(fh)
 
 
+def build_gateway(max_in_flight: int = 1) -> GatewayInterface:
+    """Select the dispatch backend.
+
+    ``J5_GATEWAY`` env override: ``cli`` forces real CLI dispatch,
+    ``zen`` forces the HTTP adapter, ``auto`` (default) uses real CLI
+    dispatch when an opencode binary is found and falls back to Zen HTTP
+    otherwise. Auto mode is what makes `j5 run` prompts actually execute.
+    """
+    from tools.router.cli_gateway import OpencodeCliAdapter, find_opencode_binary
+
+    mode = os.environ.get("J5_GATEWAY", "auto").strip().lower()
+    if mode == "zen":
+        return ZenGatewayAdapter(max_in_flight=max_in_flight)
+    if mode == "cli":
+        return OpencodeCliAdapter(max_in_flight=max_in_flight)
+    if find_opencode_binary():
+        try:
+            return OpencodeCliAdapter(max_in_flight=max_in_flight)
+        except ValueError:
+            pass
+    return ZenGatewayAdapter(max_in_flight=max_in_flight)
+
+
 def build_shared() -> SharedState:
     """Build the process-global shared singletons (spec 3.1).
 
     One HealthTracker/FeedbackLoop/FallbackChainBuilder/FreeModelRouter/
-    ZenGatewayAdapter/MultiTierCache for the whole process: a 429 recorded
+    gateway/MultiTierCache for the whole process: a 429 recorded
     in one project quarantines the model for every project (shared Zen IP
     bucket). Dispatch is serialized (max_in_flight=1) on both the router
     and the gateway adapter.
@@ -159,7 +182,7 @@ def build_shared() -> SharedState:
         chain_builder=chain_builder,
         max_in_flight=1,
     )
-    adapter = ZenGatewayAdapter(max_in_flight=1)
+    adapter = build_gateway(max_in_flight=1)
     cache = MultiTierCache(CacheConfig(l2_path=STATE_CACHE_DIR / "l2_cache.jsonl"))
     return SharedState(
         tracker=tracker,
@@ -411,7 +434,9 @@ def make_router_fn(
                 continue
             start = time.monotonic()
             try:
-                response = shared.adapter.send(candidate, text)
+                response = shared.adapter.send(
+                    candidate, text, workdir=str(ctx.dir), task_id=task_id
+                )
             except GatewayError as exc:
                 last_error = str(exc)
                 latency_ms = (time.monotonic() - start) * 1000.0
@@ -563,6 +588,7 @@ __all__ = [
     "ProjectState",
     "SyncCircuitBreaker",
     "load_config",
+    "build_gateway",
     "build_shared",
     "SHARED",
     "role_task_type",

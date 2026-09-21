@@ -3,7 +3,7 @@
 ![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-green)
 ![platform](https://img.shields.io/badge/platform-Windows%20%2F%20PowerShell-lightgrey)
-![tests](https://img.shields.io/badge/tests-139%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-160%20passing-brightgreen)
 
 > **One command center for all your projects.** See everything, delegate anything —
 > small tasks go straight to a worker, big tasks fan out across a fleet, and every
@@ -122,11 +122,15 @@ OpenCode-compatible runner:
 
 ## Tests
 
-139 tests, all green:
+160 tests green, plus 3 live-backend tests that skip by default:
 
 ```powershell
 python -m pytest tools/domains/test_domains.py tools/harness/test_integration_contracts.py `
-  tools/harness/test_e2e_integration.py tools/skills/ecosystem/contract_test.py -q
+  tools/harness/test_e2e_integration.py tools/skills/ecosystem/contract_test.py `
+  tools/router/test_cli_gateway.py -q
+
+# Live tests (real opencode + agy backends, slower):
+J5_LIVE=1 python -m pytest tools/harness/test_bridge_hardening.py -v
 ```
 
 Coverage includes: router/fallback/EMA behavior, delegation DAG + dependency

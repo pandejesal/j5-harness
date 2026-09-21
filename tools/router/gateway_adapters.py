@@ -49,7 +49,10 @@ class GatewayInterface(abc.ABC):
         """Send prompt to model; return response dict; raise GatewayError."""
         raise NotImplementedError
 
-    def send(self, model: str, prompt: str, timeout_s: float = 60.0) -> dict:
+    def send(self, model: str, prompt: str, timeout_s: float = 60.0,
+             **kwargs: object) -> dict:
+        # **kwargs (workdir, task_id, ...) accepted and ignored so every
+        # gateway honors the same call contract as OpencodeCliAdapter.
         return asyncio.run(self.asend(model, prompt))
 
 

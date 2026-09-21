@@ -202,7 +202,7 @@ class Backend:
                 "state": node.state.name,
                 "model_id": node.model_id,
                 "confidence": float(node.confidence or 0.0),
-                "text": (node.result_text or "")[:4000],
+                "text": (node.result or "")[:4000],
                 "ledger": str(ctx.ledger_path),
             })
         except Exception as exc:  # noqa: BLE001
