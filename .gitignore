@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------------------
+# J5 Harness .gitignore — clean open-source layout
+# Code, docs, and config ship. Session history, caches, and secrets do not.
+# ---------------------------------------------------------------------------
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node (opencode plugin deps are reinstallable via package.json)
+node_modules/
+.opencode/node_modules/
+
+# J5 session state — local history, telemetry, ledgers (never published)
+.swarm/
+.swarm-staged/
+
+# Runtime-generated files
+*.log
+*.tmp
+tools/router/history.jsonl
+tools/router/feedback.jsonl
+tools/**/history.jsonl
+tools/**/feedback.jsonl
+tools/state/cache/
+*.db
+*.db-shm
+*.db-wal
+
+# Kilo / InterHarness bus directories (created at runtime in project dirs)
+.kilo/
+InterHarness/
+.harness/
+
+# Secrets — NEVER commit
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.json
+
+# Backups
+*.bak
+*.orig
+
+# OS / editors
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local desktop launcher logs
+j5_desktop/modern-app.out.log
+j5_desktop/modern-app.err.log

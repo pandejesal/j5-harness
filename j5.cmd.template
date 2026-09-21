@@ -1,0 +1,26 @@
+@echo off
+REM J5 Harness global command template.
+REM
+REM Setup (one time, in cmd):
+REM   1. Edit REPO below to your checkout path (defaults to this repo's location
+REM      if you keep the file next to it — see note).
+REM   2. mkdir %USERPROFILE%\bin
+REM   3. copy j5.cmd.template %USERPROFILE%\bin\j5.cmd
+REM   4. setx PATH "%PATH%;%USERPROFILE%\bin"
+REM   5. Reopen your terminal. `j5` now works from anywhere.
+REM
+REM NOTE: this template calls python from PATH. If `python` is not on your
+REM PATH, replace `python` below with the full path to python.exe.
+
+set "REPO=C:\Users\DELL\j5-harness"
+
+where python >nul 2>nul
+if %errorlevel% neq 0 (
+  echo [j5] python not found on PATH. Install Python or fix PATH first.
+  exit /b 1
+)
+if not exist "%REPO%\j5_cli\main.py" (
+  echo [j5] repo not found at %REPO%. Edit REPO inside %~f0.
+  exit /b 1
+)
+python "%REPO%\j5_cli\main.py" %*

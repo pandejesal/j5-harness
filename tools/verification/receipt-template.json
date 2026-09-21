@@ -1,0 +1,85 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VerificationReceipt",
+  "description": "Structured verification receipt for code review gate",
+  "type": "object",
+  "required": [
+    "implementer_id",
+    "verifier_id",
+    "diff_sha",
+    "test_cmd",
+    "test_exit",
+    "findings",
+    "verdict",
+    "timestamp"
+  ],
+  "properties": {
+    "implementer_id": {
+      "type": "string",
+      "description": "Agent ID of the coder who made the change"
+    },
+    "verifier_id": {
+      "type": "string",
+      "description": "Agent ID of the reviewing agent; MUST differ from implementer_id"
+    },
+    "diff_sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$",
+      "description": "Full 40-char SHA of the verified diff"
+    },
+    "test_cmd": {
+      "type": "string",
+      "description": "Exact command used to validate"
+    },
+    "test_exit": {
+      "type": "integer",
+      "description": "Exit code: 0 = pass, nonzero = fail"
+    },
+    "findings": {
+      "type": "array",
+      "description": "List of review findings",
+      "items": {
+        "type": "object",
+        "required": ["file_line", "description", "severity", "check_id"],
+        "properties": {
+          "file_line": {
+            "type": "string",
+            "description": "path:line of finding"
+          },
+          "description": {
+            "type": "string",
+            "description": "1-line finding description"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["P0", "P1", "P2"]
+          },
+          "check_id": {
+            "type": "string",
+            "description": "Checklist identifier (e.g. SEC-01)"
+          }
+        }
+      }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "CONDITIONAL"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "implementer_id": { "const": { "$data": "1/verifier_id" } }
+        }
+      },
+      "then": {
+        "error": "implementer_id must not equal verifier_id (self-review prohibition)"
+      }
+    }
+  ]
+}

@@ -1,0 +1,306 @@
+{
+  "domains": {
+    "quant": {
+      "description": "Quantitative finance, algorithmic trading, risk modeling",
+      "models": {
+        "primary": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+        "fallback": ["muse-spark-1.3-contributor-free", "ling-3.0-flash-fin-free"]
+      },
+      "skills": [
+        "quant/backtesting",
+        "quant/risk_models",
+        "quant/portfolio_optimization",
+        "quant/market_data",
+        "quant/strategy_research",
+        "quant/execution_algos"
+      ],
+      "tools": [
+        "python/pandas",
+        "python/numpy",
+        "python/scipy",
+        "python/statsmodels",
+        "python/arch",
+        "python/vectorbt",
+        "python/backtrader",
+        "python/zipline",
+        "python/quantlib"
+      ],
+      "data_sources": [
+        "yahoo_finance",
+        "alpha_vantage",
+        "polygon_io",
+        "quandl",
+        "fred",
+        "bloomberg",
+        "reuters"
+      ],
+      "constraints": {
+        "latency_critical": true,
+        "deterministic_execution": true,
+        "audit_trail": true,
+        "regulatory_compliance": ["SEC", "CFTC", "MiFID II"]
+      },
+      "fallbackLadders": {
+        "research": ["nemotron-3-ultra-free", "mimo-v2.5-free", "muse-spark-1.3-contributor-free"],
+        "coder": ["mimo-v2.5-free", "nemotron-3-ultra-free", "muse-spark-1.3-contributor-free"],
+        "planner": ["nemotron-3-ultra-free", "mimo-v2.5-free", "muse-spark-1.3-contributor-free"],
+        "bulk": ["mimo-v2.5-free", "nemotron-3-ultra-free"]
+      }
+    },
+    "finance": {
+      "description": "Financial analysis, modeling, reporting, compliance",
+      "models": {
+        "primary": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+        "fallback": ["ling-3.0-flash-fin-free", "muse-spark-1.3-contributor-free"]
+      },
+      "skills": [
+        "finance/financial_modeling",
+        "finance/valuation",
+        "finance/risk_analysis",
+        "finance/compliance",
+        "finance/reporting",
+        "finance/monte_carlo"
+      ],
+      "tools": [
+        "python/pandas",
+        "python/numpy",
+        "python/openpyxl",
+        "python/xlwings",
+        "python/pdfplumber",
+        "python/tabula-py"
+      ],
+      "data_sources": [
+        "sec_edgar",
+        "fred",
+        "world_bank",
+        "imf",
+        "oecd",
+        "bloomberg",
+        "reuters",
+        "factset"
+      ],
+      "constraints": {
+        "audit_trail": true,
+        "data_privacy": true,
+        "regulatory_compliance": ["SOX", "GDPR", "CCPA", "Basel III"]
+      },
+      "fallbackLadders": {
+        "research": ["nemotron-3-ultra-free", "mimo-v2.5-free", "ling-3.0-flash-fin-free"],
+        "coder": ["mimo-v2.5-free", "nemotron-3-ultra-free"],
+        "planner": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+        "bulk": ["mimo-v2.5-free", "nemotron-3-ultra-free"]
+      }
+    },
+    "drone": {
+      "description": "Drone/robotics control, computer vision, path planning, simulation",
+      "models": {
+        "primary": ["mimo-v2.5-free", "nemotron-3-ultra-free"],
+        "fallback": ["muse-spark-1.3-contributor-free", "laguna-s-2.1-free"]
+      },
+      "skills": [
+        "drone/flight_control",
+        "drone/computer_vision",
+        "drone/path_planning",
+        "drone/simulation",
+        "drone/sensor_fusion",
+        "drone/swarm_coordination",
+        "drone/ros2_integration"
+      ],
+      "tools": [
+        "python/opencv",
+        "python/numpy",
+        "python/ros2",
+        "python/airsim",
+        "python/gymnasium",
+        "python/stable_baselines3",
+        "python/pytorch",
+        "python/tensorflow",
+        "cpp/eigen",
+        "cpp/opencv"
+      ],
+      "data_sources": [
+        "airsim",
+        "gazebo",
+        "px4",
+        "ardupilot",
+        "dji_sdk",
+        "mavlink"
+      ],
+      "constraints": {
+        "real_time": true,
+        "safety_critical": true,
+        "deterministic_execution": true,
+        "hardware_in_loop": true
+      },
+      "fallbackLadders": {
+        "research": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+        "coder": ["mimo-v2.5-free", "nemotron-3-ultra-free", "muse-spark-1.3-contributor-free"],
+        "planner": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+        "bulk": ["mimo-v2.5-free", "nemotron-3-ultra-free"]
+      }
+    },
+    "research": {
+      "description": "Academic/scientific research, literature review, experimentation",
+      "models": {
+        "primary": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+        "fallback": ["ling-3.0-flash-fin-free", "muse-spark-1.3-contributor-free"]
+      },
+      "skills": [
+        "research/literature_review",
+        "research/experiment_design",
+        "research/data_analysis",
+        "research/statistical_testing",
+        "research/paper_writing",
+        "research/reproducibility",
+        "research/hypothesis_testing"
+      ],
+      "tools": [
+        "python/pandas",
+        "python/numpy",
+        "python/scipy",
+        "python/statsmodels",
+        "python/scikit-learn",
+        "python/matplotlib",
+        "python/seaborn",
+        "python/jupyter",
+        "r/tidyverse",
+        "latex"
+      ],
+      "data_sources": [
+        "arxiv",
+        "pubmed",
+        "google_scholar",
+        "semantic_scholar",
+        "crossref",
+        "kaggle",
+        "uci_ml_repo"
+      ],
+      "constraints": {
+        "reproducibility": true,
+        "citation_tracking": true,
+        "peer_review_ready": true,
+        "open_science": true
+      },
+      "fallbackLadders": {
+        "research": ["nemotron-3-ultra-free", "mimo-v2.5-free", "ling-3.0-flash-fin-free"],
+        "coder": ["mimo-v2.5-free", "nemotron-3-ultra-free"],
+        "planner": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+        "bulk": ["mimo-v2.5-free", "nemotron-3-ultra-free"]
+      }
+    },
+    "coding": {
+      "description": "General software development, refactoring, testing, architecture",
+      "models": {
+        "primary": ["mimo-v2.5-free", "nemotron-3-ultra-free"],
+        "fallback": ["muse-spark-1.3-contributor-free", "ling-3.0-flash-fin-free"]
+      },
+      "skills": [
+        "coding/architecture",
+        "coding/refactoring",
+        "coding/testing",
+        "coding/debugging",
+        "coding/code_review",
+        "coding/documentation",
+        "coding/ci_cd",
+        "coding/security_audit"
+      ],
+      "tools": [
+        "python",
+        "typescript",
+        "javascript",
+        "rust",
+        "go",
+        "cpp",
+        "java",
+        "csharp",
+        "docker",
+        "kubernetes",
+        "terraform",
+        "ansible"
+      ],
+      "data_sources": [
+        "github",
+        "gitlab",
+        "npm",
+        "pypi",
+        "crates.io",
+        "maven",
+        "nuget"
+      ],
+      "constraints": {
+        "code_quality": true,
+        "test_coverage": true,
+        "security": true,
+        "maintainability": true
+      },
+      "fallbackLadders": {
+        "research": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+        "coder": ["mimo-v2.5-free", "nemotron-3-ultra-free", "muse-spark-1.3-contributor-free"],
+        "planner": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+        "bulk": ["mimo-v2.5-free", "nemotron-3-ultra-free", "muse-spark-1.2-contributor-free"]
+      }
+    },
+    "general": {
+      "description": "General purpose tasks, conversation, analysis, planning",
+      "models": {
+        "primary": ["ling-3.0-flash-fin-free", "nemotron-3-ultra-free"],
+        "fallback": ["mimo-v2.5-free", "muse-spark-1.3-contributor-free"]
+      },
+      "skills": [
+        "general/conversation",
+        "general/analysis",
+        "general/planning",
+        "general/writing",
+        "general/summarization",
+        "general/translation"
+      ],
+      "tools": [
+        "python",
+        "web_search",
+        "file_operations"
+      ],
+      "data_sources": [
+        "web",
+        "wikipedia",
+        "news"
+      ],
+      "constraints": {
+        "helpful": true,
+        "harmless": true,
+        "honest": true
+      },
+      "fallbackLadders": {
+        "research": ["nemotron-3-ultra-free", "ling-3.0-flash-fin-free"],
+        "coder": ["mimo-v2.5-free", "nemotron-3-ultra-free"],
+        "planner": ["nemotron-3-ultra-free", "ling-3.0-flash-fin-free"],
+        "bulk": ["ling-3.0-flash-fin-free", "nemotron-3-ultra-free"]
+      }
+    }
+  },
+  "global": {
+    "shared_models": [
+      "mimo-v2.5-free",
+      "nemotron-3-ultra-free",
+      "ling-3.0-flash-fin-free",
+      "muse-spark-1.3-contributor-free",
+      "laguna-s-2.1-free"
+    ],
+    "zen_endpoints": [
+      "https://zen.example.com/v1",
+      "https://zen-backup.example.com/v1"
+    ],
+    "vpn_advisory": "Advisory-only: the Zen free-tier key is rate-limited per IP bucket. If 429s persist across all endpoints, rotate the egress VPN endpoint manually, then wait for Retry-After to elapse. This router never rotates networks automatically.",
+    "defaults": {
+      "serializeSolo": true,
+      "maxParallel": 2,
+      "orphanAgeH": 4,
+      "langserverCapMB": 650
+    },
+    "circuitBreaker": {
+      "two429in5min": true,
+      "nodeCount": 12,
+      "errRate20pct": true,
+      "cooldownMin": 15
+    }
+  }
+}
