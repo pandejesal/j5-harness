@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 try:
@@ -190,12 +191,107 @@ class OpencodeCliAdapter(GatewayInterface):
         self._lock = threading.Lock()
         self._alock = asyncio.Lock()
         self._in_flight = 0
+        self._current_proc: subprocess.Popen | None = None
 
     def _resolve_cwd(self, workdir: str | Path | None) -> Path:
         if workdir and Path(workdir).is_dir():
             return Path(workdir)
         self.workdir.mkdir(parents=True, exist_ok=True)
         return self.workdir
+
+    def _build_cmd(self, cli_model: str, prompt: str, cwd: Path, title: str,
+                   session_id: str | None = None) -> list[str]:
+        cmd = [
+            self.binary, "run", prompt,
+            "-m", cli_model,
+            "--dir", str(cwd),
+            "--title", title,
+            "--format", "json",
+            *self.extra_args,
+        ]
+        if session_id:
+            # Continue an existing worker session (multi-turn continuity).
+            cmd += ["--session", session_id]
+        return cmd
+
+    def terminate_current(self) -> None:
+        """Kill the in-flight worker process, if any (user cancel)."""
+        with self._lock:
+            proc = self._current_proc
+        if proc is not None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+
+    def _drain(self, proc: "subprocess.Popen[str]", timeout: float,
+               on_text: Callable[[str], None] | None = None
+               ) -> tuple[str, dict, int, str, bool]:
+        """Read a `--format json` event stream to completion.
+
+        Returns (text, usage, exit_code, stderr, timed_out). Text chunks
+        are forwarded to ``on_text`` the moment they arrive, which is what
+        lets the TUI/desktop stream answers live instead of hanging and
+        dumping at the end.
+        """
+        chunks: list[str] = []
+        usage: dict = {}
+        session_id: str | None = None
+        raw_lines: list[str] = []
+        timed_out = {"fired": False}
+
+        def _kill() -> None:
+            timed_out["fired"] = True
+            try:
+                proc.kill()
+            except OSError:
+                pass
+
+        timer = threading.Timer(timeout, _kill)
+        timer.start()
+        try:
+            for line in proc.stdout:  # EOF when the worker exits / is killed
+                raw_lines.append(line)
+                s = line.strip()
+                if not s.startswith("{"):
+                    continue
+                try:
+                    event = json.loads(s)
+                except ValueError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                session_id = session_id or event.get("sessionID")
+                if event.get("type") == "text":
+                    part = event.get("part") or {}
+                    text = part.get("text")
+                    if isinstance(text, str) and text:
+                        chunks.append(text)
+                        if on_text is not None:
+                            on_text(text)
+                elif event.get("type") == "step_finish":
+                    part = event.get("part") or {}
+                    tokens = part.get("tokens") or {}
+                    usage = {
+                        "tokens_total": tokens.get("total"),
+                        "tokens_input": tokens.get("input"),
+                        "tokens_output": tokens.get("output"),
+                        "cost": tokens.get("cost", part.get("cost", 0)),
+                        "finish_reason": part.get("reason"),
+                    }
+            rc = proc.wait()
+            try:
+                stderr = proc.stderr.read() if proc.stderr else ""
+            except (OSError, ValueError):
+                stderr = ""
+        finally:
+            timer.cancel()
+        text = "".join(chunks).strip()
+        if session_id:
+            usage["session_id"] = session_id
+        if not text and not any(line.strip().startswith("{") for line in raw_lines):
+            text = "".join(raw_lines).strip()
+        return text, usage, rc, stderr or "", timed_out["fired"]
 
     def send(
         self,
@@ -205,25 +301,24 @@ class OpencodeCliAdapter(GatewayInterface):
         *,
         workdir: str | Path | None = None,
         task_id: str | None = None,
+        session_id: str | None = None,
+        on_text: Callable[[str], None] | None = None,
     ) -> dict:
         """Run one headless `opencode run` and return its answer.
 
-        Extra keyword args (``workdir``, ``task_id``) are accepted so the
-        harness router can pass per-project context; the Zen adapter ignores
-        them via its own tolerant signature.
+        Extra keyword args (``workdir``, ``task_id``, ``session_id``) are
+        accepted so the harness router can pass per-project context; the
+        Zen adapter ignores them via its own tolerant signature.
+
+        ``on_text`` receives each answer chunk the moment it arrives, so
+        the TUI/desktop can stream live instead of hanging and dumping.
+        ``session_id`` continues an existing worker session (multi-turn).
         """
         timeout = timeout_s or self.timeout_s
         cli_model = cli_model_id(model, self.provider_prefix)
         cwd = self._resolve_cwd(workdir)
         title = f"{DEFAULT_TITLE_PREFIX}-{task_id}" if task_id else DEFAULT_TITLE_PREFIX
-        cmd = [
-            self.binary, "run", prompt,
-            "-m", cli_model,
-            "--dir", str(cwd),
-            "--title", title,
-            "--format", "json",
-            *self.extra_args,
-        ]
+        cmd = self._build_cmd(cli_model, prompt, cwd, title, session_id)
         env = {
             **os.environ,
             "PYTHONIOENCODING": "utf-8",
@@ -234,34 +329,37 @@ class OpencodeCliAdapter(GatewayInterface):
             # stdin=DEVNULL: headless dispatch must NEVER block on an
             # interactive permission prompt. A denied tool becomes a
             # GatewayError, which the fallback chain handles gracefully.
-            proc = subprocess.run(
+            proc = subprocess.Popen(
                 cmd,
                 cwd=str(cwd),
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 stdin=subprocess.DEVNULL,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=timeout,
                 env=env,
                 shell=False,
             )
-        except subprocess.TimeoutExpired as exc:
-            raise GatewayError(f"opencode run timed out after {timeout:.0f}s (model {cli_model})") from exc
         except OSError as exc:
             raise GatewayError(f"opencode launch failed: {exc}") from exc
-
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
-        text, usage = extract_opencode_text(stdout)
+        with self._lock:
+            self._current_proc = proc
+        try:
+            text, usage, rc, stderr, timed_out = self._drain(proc, timeout, on_text)
+        finally:
+            with self._lock:
+                self._current_proc = None
+        if timed_out and not text:
+            raise GatewayError(f"opencode run timed out after {timeout:.0f}s (model {cli_model})")
         if text:
             return {
                 "output": text,
                 "usage": usage,
                 "model": cli_model,
-                "exit_code": proc.returncode,
+                "exit_code": rc,
             }
-        message, status, retry_after = classify_cli_failure(stderr, stdout)
+        message, status, retry_after = classify_cli_failure(stderr, "")
         raise GatewayError(message, status_code=status, retry_after_s=retry_after)
 
     async def asend(self, model: str, prompt: str) -> dict:

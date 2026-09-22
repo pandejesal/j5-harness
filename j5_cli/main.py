@@ -59,9 +59,8 @@ from tools.harness.integration import (
     build_project_states,
     make_router_fn,
     run_probe_roundtrip,
-    SHARED,
+    get_shared,
 )
-from tools.harness.watch_kilo import process_once as watch_once
 from tools.latency.benchmark import run_benchmark, BenchmarkConfig
 from tools.latency.parallel_executor import run_parallel
 from tools.latency.caching import MultiTierCache, CacheConfig
@@ -83,6 +82,49 @@ from tools.ui.theme import (
     supports_color,
     title,
 )
+
+
+# ---------------------------------------------------------------------------
+# Mutation boundary: capability map + readonly guard
+#
+# Single source of truth for what each command is allowed to do. Readonly
+# mode (--readonly flag or J5_READONLY=1 env) refuses any command with any
+# True capability and exits 2. `capabilities` itself is read-only so the
+# boundary stays inspectable while locked.
+# ---------------------------------------------------------------------------
+
+COMMAND_CAPABILITIES: dict[str, dict[str, bool]] = {
+    "run":          {"spawns_worker": True,  "mutates_project": True,  "mutates_harness_state": True},
+    "probe":        {"spawns_worker": True,  "mutates_project": True,  "mutates_harness_state": True},
+    "watch":        {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": True},
+    "route":        {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "status":       {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "projects":     {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "domains":      {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "skills":       {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "config":       {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "benchmark":    {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "doctor":       {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "capabilities": {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "tui":          {"spawns_worker": True,  "mutates_project": True,  "mutates_harness_state": True},
+}
+
+READONLY_EXIT_CODE = 2
+
+_CAPABILITY_REASONS = {
+    "spawns_worker": "spawn worker processes",
+    "mutates_project": "write into project directories",
+    "mutates_harness_state": "write harness state (ledger/cache/tracker)",
+}
+
+
+def readonly_source(args: argparse.Namespace) -> str:
+    """Return how readonly mode was enabled, or '' when it is off."""
+    if getattr(args, "readonly", False):
+        return "--readonly"
+    if os.environ.get("J5_READONLY", "").strip().lower() in ("1", "true", "yes"):
+        return "J5_READONLY=1"
+    return ""
 
 
 def cmd_route(args: argparse.Namespace) -> int:
@@ -255,6 +297,9 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
 def cmd_watch(args: argparse.Namespace) -> int:
     """Start Kilo watcher."""
+    # Lazy import: tools.harness.watch_kilo must not be touched by commands
+    # that never watch (its import used to create the tracker dir).
+    from tools.harness.watch_kilo import process_once as watch_once
     print(hint("Starting Kilo watcher..."))
     print(hint("Press Ctrl+C to stop"))
     try:
@@ -398,12 +443,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     task_id = f"task-{int(time.time()) % 100000:05d}"
     ledger = DelegationLedger(ctx.ledger_path)
-    router_fn = make_router_fn(ctx, SHARED, config)
+    shared = get_shared()
+    router_fn = make_router_fn(ctx, shared, config)
     orch = Orchestrator(ledger=ledger, router_fn=router_fn)
 
     if not args.json:
         print(f"{color('Dispatching:', ANSI.ACCENT)} {task_id} -> {project} [{task_type}]")
-        print(f"{color('Gateway:', ANSI.ACCENT)} {type(SHARED.adapter).__name__}")
+        print(f"{color('Gateway:', ANSI.ACCENT)} {type(shared.adapter).__name__}")
 
     dag = orch.decompose(prompt, [{"task_id": task_id, "prompt": prompt}])
     dag = orch.run(dag, task_type=task_type)
@@ -439,14 +485,27 @@ def cmd_run(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     json_sub = argparse.ArgumentParser(add_help=False)
     json_sub.add_argument("--json", action="store_true", dest="sub_json", help="Output JSON")
+    # Same dest as the root flag: accepted before AND after the subcommand
+    # (`j5 --readonly status` and `j5 status --readonly` both work).
+    # default=SUPPRESS is load-bearing: a plain False default on the
+    # subparser would overwrite a True set by the root flag (subparsers
+    # re-seed their own defaults into the shared namespace). SUPPRESS means
+    # the subparser only ever writes when the flag is actually passed.
+    json_sub.add_argument("--readonly", action="store_true", default=argparse.SUPPRESS,
+                          help="Refuse mutating commands (exit 2)")
 
     parser = argparse.ArgumentParser(
         prog="j5",
         description="J5 Harness — Multi-domain coding harness for quant, finance, drone, research, coding, general",
+        epilog="Readonly mode: --readonly (or J5_READONLY=1) refuses any command that spawns\n"
+               "workers or writes anything (run/probe/watch/tui) and exits 2.\n"
+               "See `j5 capabilities` for the per-command boundary map.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version="J5 Harness 1.0.0")
     parser.add_argument("--json", action="store_true", dest="global_json", help="Output JSON")
+    parser.add_argument("--readonly", action="store_true",
+                        help="Refuse mutating commands (exit 2). Same as J5_READONLY=1.")
     
     # No subcommand => interactive TUI (like bare `opencode` / `hermes`).
     sub = parser.add_subparsers(dest="command", required=False)
@@ -498,6 +557,16 @@ def build_parser() -> argparse.ArgumentParser:
     # tui (explicit; bare `j5` also lands here)
     sub.add_parser("tui", parents=[json_sub], help="Open the interactive terminal UI")
 
+    # capabilities (read-only; inspectable even in readonly mode)
+    sub.add_parser("capabilities", parents=[json_sub], help="Show the per-command mutation boundary map")
+
+    # Drift guard: every subcommand must have a capability entry, or the
+    # readonly gate cannot reason about it. Fails at parser construction
+    # (loudly, everywhere) instead of failing open at runtime.
+    unmapped = sorted(set(sub.choices) - set(COMMAND_CAPABILITIES))
+    if unmapped:
+        raise ValueError(f"subcommands missing from COMMAND_CAPABILITIES: {unmapped}")
+
     return parser
 
 
@@ -516,11 +585,26 @@ def cmd_tui(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_capabilities(args: argparse.Namespace) -> int:
+    """Print the per-command mutation boundary map."""
+    if args.json:
+        print(json.dumps(COMMAND_CAPABILITIES, indent=2))
+        return 0
+    print(f"{'command':<12} {'worker':<7} {'project':<8} state")
+    print("-" * 40)
+    for cmd in sorted(COMMAND_CAPABILITIES):
+        caps = COMMAND_CAPABILITIES[cmd]
+        cell = lambda v: "yes" if v else "no"  # noqa: E731 - tiny local formatter
+        print(f"{cmd:<12} {cell(caps['spawns_worker']):<7} "
+              f"{cell(caps['mutates_project']):<8} {cell(caps['mutates_harness_state'])}")
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     args.json = bool(getattr(args, "global_json", False) or getattr(args, "sub_json", False))
-    
+
     commands = {
         "route": cmd_route,
         "status": cmd_status,
@@ -534,17 +618,38 @@ def main(argv: Optional[list[str]] = None) -> int:
         "doctor": cmd_doctor,
         "run": cmd_run,
         "tui": cmd_tui,
+        "capabilities": cmd_capabilities,
     }
 
-    if args.command is None:
-        # Bare `j5` opens the interactive UI, like bare `opencode` / `hermes`.
-        return cmd_tui(args)
+    # Bare `j5` opens the interactive UI, like bare `opencode` / `hermes`.
+    effective = args.command or "tui"
 
-    if args.command not in commands:
+    # Readonly gate: refuse anything that spawns or writes, before it runs.
+    # Fail closed: a command missing from the map is refused, never allowed.
+    source = readonly_source(args)
+    if source:
+        caps = COMMAND_CAPABILITIES.get(effective)
+        if caps is None:
+            print(fail_line(f"Error: '{effective}' has no capability entry; "
+                            f"refusing in readonly mode ({source})",
+                            enabled=supports_color(sys.stderr)), file=sys.stderr)
+            return READONLY_EXIT_CODE
+        triggered = sorted(k for k, v in caps.items() if v)
+        if triggered:
+            reasons = ", ".join(_CAPABILITY_REASONS[k] for k in triggered)
+            err = supports_color(sys.stderr)
+            print(fail_line(f"Error: '{effective}' is blocked in readonly mode ({source})",
+                            enabled=err), file=sys.stderr)
+            print(f"  It would {reasons}.", file=sys.stderr)
+            print(hint("Re-run without --readonly (or unset J5_READONLY) to allow mutation."),
+                  file=sys.stderr)
+            return READONLY_EXIT_CODE
+
+    if effective not in commands:
         parser.print_help()
         return 1
 
-    return commands[args.command](args)
+    return commands[effective](args)
 
 
 if __name__ == "__main__":

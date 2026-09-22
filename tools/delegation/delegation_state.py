@@ -50,6 +50,7 @@ class TaskNode:
     max_attempts: int = 3
     result: str | None = None
     model_id: str | None = None
+    session_id: str | None = None  # worker session for multi-turn continuity
     error: dict | None = None
 
     def __post_init__(self) -> None:
@@ -80,10 +81,13 @@ class TaskNode:
     def can_retry(self) -> bool:
         return self.attempts < self.max_attempts
 
-    def set_result(self, result: str, confidence: float, model_id: str | None = None) -> None:
+    def set_result(self, result: str, confidence: float, model_id: str | None = None,
+                   session_id: str | None = None) -> None:
         self.result = result
         self.confidence = _clamp_confidence(confidence)
         self.model_id = model_id
+        if session_id:
+            self.session_id = session_id
 
     def set_error(self, error: dict) -> None:
         self.error = dict(error)

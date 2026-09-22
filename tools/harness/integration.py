@@ -194,9 +194,30 @@ def build_shared() -> SharedState:
     )
 
 
-# Process-global singletons (spec 3.1). Built at import so every project
-# shares the same health/feedback/cache state.
-SHARED = build_shared()
+# Process-global singletons (spec 3.1). Built lazily on first use so that
+# importing this module (e.g. `j5 status`, `j5 route`, `j5 --help`) never
+# creates files or directories as a side effect. Every project still shares
+# the same health/feedback/cache state once built.
+_SHARED: SharedState | None = None
+_SHARED_LOCK = threading.Lock()
+
+
+def get_shared() -> SharedState:
+    """Return the process-global singletons, building them on first call."""
+    global _SHARED
+    if _SHARED is None:
+        with _SHARED_LOCK:
+            if _SHARED is None:
+                _SHARED = build_shared()
+    return _SHARED
+
+
+def __getattr__(name: str) -> SharedState:
+    # PEP 562: keep `from tools.harness.integration import SHARED` working
+    # (tests, desktop/TUI/soak call sites) while building lazily.
+    if name == "SHARED":
+        return get_shared()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def role_task_type(role: str) -> str:
@@ -385,6 +406,8 @@ def make_router_fn(
         task_type: str,
         chain: list[str] | None = None,
         model_id: str | None = None,
+        on_text=None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         # 1. Skill leaf: task_id bound to a skill at decompose time.
         leaf = ctx.leaf_skills.get(task_id)
@@ -435,7 +458,8 @@ def make_router_fn(
             start = time.monotonic()
             try:
                 response = shared.adapter.send(
-                    candidate, text, workdir=str(ctx.dir), task_id=task_id
+                    candidate, text, workdir=str(ctx.dir), task_id=task_id,
+                    on_text=on_text, session_id=session_id,
                 )
             except GatewayError as exc:
                 last_error = str(exc)
@@ -453,7 +477,8 @@ def make_router_fn(
             shared.tracker.record_success(candidate, latency_ms)
             shared.feedback.record(candidate, latency_ms, completeness=1.0, accuracy=1.0)
             breaker.record_success()
-            result = {"text": _extract_text(response), "confidence": 1.0, "model_id": candidate}
+            result = {"text": _extract_text(response), "confidence": 1.0, "model_id": candidate,
+                      "session_id": (response.get("usage") or {}).get("session_id")}
             # 7. Cache set (read-only leaves only).
             shared.cache.set(cache_key, result)
             return result
@@ -590,6 +615,7 @@ __all__ = [
     "load_config",
     "build_gateway",
     "build_shared",
+    "get_shared",
     "SHARED",
     "role_task_type",
     "role_chain_for",

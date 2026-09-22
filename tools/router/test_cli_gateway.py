@@ -7,8 +7,10 @@ checks are all mocked. A live end-to-end proof lives outside this file
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -124,14 +126,61 @@ class FindBinaryTest(unittest.TestCase):
             self.assertIsNone(find_opencode_binary())
 
 
+class FakeStdout:
+    """Iterable stdout for FakePopen (plain list of lines)."""
+
+    def __init__(self, lines):
+        self._lines = list(lines)
+
+    def __iter__(self):
+        return iter(self._lines)
+
+
+class HangingStdout:
+    """Blocks until the proc is killed, emulating a stuck worker."""
+
+    def __init__(self, proc):
+        self._proc = proc
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        for _ in range(10000):
+            if self._proc.killed:
+                raise StopIteration
+            time.sleep(0.002)
+        raise StopIteration
+
+
+class FakePopen:
+    def __init__(self, lines=(), returncode=0, stderr="", hanging=False):
+        self.killed = False
+        self._hanging = hanging
+        self._lines = list(lines)
+        self.stdout = None  # wired below (needs self)
+        self.stderr = io.StringIO(stderr)
+        self.returncode = returncode
+        self.stdout = HangingStdout(self) if hanging else FakeStdout(self._lines)
+
+    def wait(self):
+        return -9 if self.killed else self.returncode
+
+    def kill(self):
+        self.killed = True
+
+
 class AdapterSendTest(unittest.TestCase):
     def _adapter(self):
         return OpencodeCliAdapter(binary="C:/fake/opencode.exe", workdir="C:/fake/wd")
 
+    def _popen(self, *args, **kwargs):
+        raise AssertionError("patch me per-test")
+
     def test_success_returns_output(self):
         adapter = self._adapter()
-        with patch("tools.router.cli_gateway.subprocess.run",
-                   return_value=_completed(stdout=_json_stream(["J5_OK"]))) as m:
+        fake = FakePopen(_json_stream(["J5_OK"]).splitlines(keepends=True))
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake) as m:
             with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
                 result = adapter.send("mimo-v2.5-free", "hi", workdir="C:/proj", task_id="task-1")
         self.assertEqual(result["output"], "J5_OK")
@@ -144,18 +193,38 @@ class AdapterSendTest(unittest.TestCase):
         self.assertIn("j5-task-1", cmd)  # title carries the task id
         self.assertIs(m.call_args[1]["stdin"], subprocess.DEVNULL)  # never hang on prompts
 
+    def test_on_text_streams_chunks_live(self):
+        adapter = self._adapter()
+        fake = FakePopen(_json_stream(["hel", "lo"]).splitlines(keepends=True))
+        seen: list[str] = []
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake):
+            with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
+                result = adapter.send("mimo-v2.5-free", "hi", on_text=seen.append)
+        self.assertEqual(seen, ["hel", "lo"])
+        self.assertEqual(result["output"], "hello")
+
+    def test_session_id_continues_worker_session(self):
+        adapter = self._adapter()
+        fake = FakePopen(_json_stream(["ok"]).splitlines(keepends=True))
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake) as m:
+            with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
+                adapter.send("mimo-v2.5-free", "follow-up", session_id="ses_abc123")
+        cmd = m.call_args[0][0]
+        self.assertIn("--session", cmd)
+        self.assertIn("ses_abc123", cmd)
+
     def test_empty_output_raises(self):
         adapter = self._adapter()
-        with patch("tools.router.cli_gateway.subprocess.run",
-                   return_value=_completed(stdout="", stderr="it broke", returncode=1)):
+        fake = FakePopen([], returncode=1, stderr="it broke")
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake):
             with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
                 with self.assertRaises(GatewayError):
                     adapter.send("mimo-v2.5-free", "hi")
 
     def test_rate_limit_maps_to_429(self):
         adapter = self._adapter()
-        with patch("tools.router.cli_gateway.subprocess.run",
-                   return_value=_completed(stdout="", stderr="HTTP 429 slow down", returncode=1)):
+        fake = FakePopen([], returncode=1, stderr="HTTP 429 slow down")
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake):
             with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
                 with self.assertRaises(GatewayError) as ctx:
                     adapter.send("mimo-v2.5-free", "hi")
@@ -163,12 +232,23 @@ class AdapterSendTest(unittest.TestCase):
 
     def test_timeout_raises(self):
         adapter = self._adapter()
-        with patch("tools.router.cli_gateway.subprocess.run",
-                   side_effect=subprocess.TimeoutExpired(cmd="opencode", timeout=600)):
+        fake = FakePopen(hanging=True)
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake):
             with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
                 with self.assertRaises(GatewayError) as ctx:
-                    adapter.send("mimo-v2.5-free", "hi")
+                    adapter.send("mimo-v2.5-free", "hi", timeout_s=0.05)
         self.assertIn("timed out", str(ctx.exception))
+
+    def test_terminate_current_kills_proc(self):
+        adapter = self._adapter()
+        fake = FakePopen(hanging=True)
+        with self.assertRaises(AttributeError):
+            fake.no_such_attr  # sanity: fake is minimal
+        adapter._current_proc = fake  # type: ignore[assignment]
+        adapter.terminate_current()
+        self.assertTrue(fake.killed)
+        adapter._current_proc = None
+        adapter.terminate_current()  # no proc -> no-op, no raise
 
     def test_missing_binary_raises_value_error(self):
         with patch("tools.router.cli_gateway.find_opencode_binary", return_value=None):

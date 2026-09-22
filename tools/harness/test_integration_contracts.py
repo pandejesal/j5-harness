@@ -117,7 +117,7 @@ class BuildProjectContextsTest(unittest.TestCase):
 
 class SharedSingletonsTest(unittest.TestCase):
     def test_shared_is_global(self):
-        # SHARED is built at import time
+        # SHARED resolves lazily via module __getattr__ (no import-time build)
         self.assertIsInstance(SHARED, SharedState)
         self.assertIsNotNone(SHARED.tracker)
         self.assertIsNotNone(SHARED.feedback)

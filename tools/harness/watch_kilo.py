@@ -30,8 +30,14 @@ TRACKER_DIR = INTERHARNESS / "_tracker"
 PENDING_FILE = TRACKER_DIR / "pending.jsonl"
 LOG_FILE = TRACKER_DIR / "kilo.log"
 
-# Ensure tracker directory exists
-TRACKER_DIR.mkdir(parents=True, exist_ok=True)
+def _ensure_tracker_dir() -> Path:
+    """Create the tracker dir on first actual write — never at import.
+
+    Importing this module (e.g. via `j5 --help`) must not touch the
+    filesystem. Writers call this first.
+    """
+    TRACKER_DIR.mkdir(parents=True, exist_ok=True)
+    return TRACKER_DIR
 
 # Strict frontmatter regex: only matches --- block at start of file
 _FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -39,6 +45,7 @@ _ID_RE = re.compile(r"^id:\s*(.+)$", re.MULTILINE)
 
 
 def log(msg):
+    _ensure_tracker_dir()
     ts = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     line = f"[{ts}] {msg}"
     print(line)
@@ -80,6 +87,7 @@ def load_pending():
 
 
 def save_pending(pending):
+    _ensure_tracker_dir()
     with open(PENDING_FILE, "w", encoding="utf-8") as f:
         f.write("# InterHarness v2 - Pending Tracker (JSONL)\n")
         f.write("# Format: one JSON object per line, append-only\n")

@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import textwrap
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -42,8 +44,8 @@ try:
     from textual.app import App, ComposeResult
     from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
     from textual.widgets import (
-        Header, Footer, Static, Button, DataTable, Tree, 
-        Input, Log, TabbedContent, TabPane, Label, Select
+        Header, Footer, Static, Button, DataTable, Tree,
+        Input, Log, RichLog, TabbedContent, TabPane, Label, Select
     )
     from textual.reactive import reactive
     from textual.binding import Binding
@@ -587,6 +589,194 @@ Compression:
             except Exception as e:
                 self.query_one("#config-view", Static).update(f"Error loading config: {e}")
     
+    class ChatScreen(Screen):
+        """Prompt-first harness console: ask, stream, verify, continue.
+
+        Every turn runs the full harness path (domain route -> fallback
+        chain -> worker -> ledger + health), with the worker's answer
+        streaming live into the transcript and the worker session carried
+        across turns — the opencode / Claude Code / Codex interaction
+        model, backed by J5 routing and verification instead of a single
+        model. Esc shows the dashboard; the run keeps going and lands in
+        the ledger either way.
+        """
+
+        BINDINGS = [Binding("escape", "show_board", "Board")]
+        WRAP_WIDTH = 100
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.busy = False
+            self.session_id: str | None = None
+            self.turn = 0
+            self._buf = ""
+            self._answer_label = None
+
+        def compose(self) -> ComposeResult:
+            yield Header()
+            projects = DATA.get_projects() or ["wsb-alpha"]
+            with ScrollableContainer(id="chat-scroll"):
+                yield Label("Ask J5 anything. Routing, fallback, verification, and ledger happen automatically. "
+                            "'a' focuses here from anywhere; Esc shows the dashboard.")
+            with Horizontal(id="chat-bar"):
+                yield Select([(p, p) for p in projects], value=projects[0], id="chat-project")
+                yield Select([("coding", "coding"), ("research", "research"),
+                              ("analysis", "analysis"), ("conversation", "conversation")],
+                             value="coding", id="chat-task")
+                yield Input(placeholder="Type a task and hit Enter…", id="chat-input")
+                yield Button("Send", id="chat-send", variant="primary")
+                yield Button("Stop", id="chat-stop")
+                yield Button("New chat", id="chat-new")
+            yield Footer()
+
+        def on_mount(self) -> None:
+            try:
+                self.query_one("#chat-input", Input).focus()
+            except Exception:
+                pass
+
+        def action_show_board(self) -> None:
+            self.app.push_screen(DashboardScreen())
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            pressed = event.button.id
+            if pressed == "chat-send":
+                self._submit()
+            elif pressed == "chat-stop":
+                self._stop()
+            elif pressed == "chat-new":
+                self._new_chat()
+
+        def on_input_submitted(self, event: Input.Submitted) -> None:
+            if event.input.id == "chat-input":
+                self._submit()
+
+        # -- UI-thread helpers (never call widgets from the worker) -----
+        def _scroll(self) -> None:
+            try:
+                self.query_one("#chat-scroll", ScrollableContainer).scroll_end(animate=False)
+            except Exception:
+                pass
+
+        def _add(self, text: str) -> None:
+            try:
+                wrapped = "\n".join(textwrap.wrap(text, self.WRAP_WIDTH) or [""])
+                self.query_one("#chat-scroll", ScrollableContainer).mount(Label(wrapped))
+                self._scroll()
+            except Exception:
+                pass
+
+        def _submit(self) -> None:
+            if self.busy:
+                return
+            try:
+                prompt = self.query_one("#chat-input", Input).value.strip()
+                project = str(self.query_one("#chat-project", Select).value or "wsb-alpha")
+                task_type = str(self.query_one("#chat-task", Select).value or "coding")
+            except Exception:
+                return
+            if not prompt:
+                return
+            self.query_one("#chat-input", Input).value = ""
+            self.busy = True
+            self.turn += 1
+            self._buf = ""
+            self._add(f"── you → {project} [{task_type}] · turn {self.turn} ──")
+            self._add(prompt)
+            self._answer_label = Label("▸ routing…")
+            try:
+                self.query_one("#chat-scroll", ScrollableContainer).mount(self._answer_label)
+            except Exception:
+                self._answer_label = None
+            threading.Thread(target=self._run_turn,
+                             args=(project, task_type, prompt, self.turn),
+                             daemon=True).start()
+
+        def _on_chunk(self, chunk: str) -> None:
+            self.app.call_from_thread(self._append_chunk, chunk)
+
+        def _append_chunk(self, chunk: str) -> None:
+            if self._answer_label is None:
+                return
+            try:
+                self._buf += chunk
+                wrapped = "\n".join(textwrap.wrap(self._buf, self.WRAP_WIDTH) or [""])
+                self._answer_label.update(wrapped)
+                self._scroll()
+            except Exception:
+                pass
+
+        def _stop(self) -> None:
+            try:
+                from tools.harness.integration import SHARED
+                adapter = getattr(SHARED, "adapter", None)
+                if hasattr(adapter, "terminate_current"):
+                    adapter.terminate_current()
+                    self._add("■ stop requested — worker terminating; partial output (if any) is kept.")
+                else:
+                    self._add("■ stop unavailable on this gateway.")
+            except Exception as exc:  # noqa: BLE001 - show, never crash
+                self._add(f"stop failed: {exc}")
+
+        def _new_chat(self) -> None:
+            self.session_id = None
+            self.turn = 0
+            try:
+                scroll = self.query_one("#chat-scroll", ScrollableContainer)
+                scroll.remove_children()
+                scroll.mount(Label("New chat. Worker session reset; ledger history is kept per project."))
+            except Exception:
+                pass
+
+        # -- worker thread (never touch widgets here) --------------------
+        def _run_turn(self, project: str, task_type: str, prompt: str, turn: int) -> None:
+            emit = self.app.call_from_thread
+            try:
+                from tools.delegation.ledger import DelegationLedger
+                from tools.delegation.orchestrator import Orchestrator
+                from tools.harness.integration import (
+                    SHARED, build_project_contexts, load_config, make_router_fn,
+                )
+                config = load_config()
+                contexts = {c.name: c for c in build_project_contexts(config, "coder")}
+                if project not in contexts:
+                    raise ValueError(f"unknown project {project!r}")
+                ctx = contexts[project]
+                task_id = f"chat-{turn:03d}"
+                ledger = DelegationLedger(ctx.ledger_path)
+                router_fn = make_router_fn(ctx, SHARED, config)
+                orch = Orchestrator(ledger=ledger, router_fn=router_fn)
+                dag = orch.decompose(prompt, [{"task_id": task_id, "prompt": prompt}])
+                emit(self._set_status, f"▸ dispatched {task_id} · streaming…")
+                dag = orch.run(dag, task_type=task_type,
+                               on_text=self._on_chunk, session_id=self.session_id)
+                node = dag.nodes[task_id]
+                if getattr(node, "session_id", None):
+                    self.session_id = node.session_id
+                emit(self._finish, node.state.name, node.model_id or "?",
+                     float(node.confidence or 0.0), str(ctx.ledger_path))
+            except Exception as exc:  # noqa: BLE001 - show, never crash the TUI
+                emit(self._add, f"✖ turn failed: {type(exc).__name__}: {str(exc)[:300]}")
+            finally:
+                emit(self._set_busy, False)
+
+        def _set_status(self, text: str) -> None:
+            if self._answer_label is not None:
+                try:
+                    self._answer_label.update(text)
+                except Exception:
+                    pass
+
+        def _set_busy(self, value: bool) -> None:
+            self.busy = value
+
+        def _finish(self, state: str, model: str, conf: float, ledger: str) -> None:
+            if not self._buf:
+                self._append_chunk("(empty response)")
+            continued = f" · session kept ({self.session_id})" if self.session_id else ""
+            self._add(f"── {state} via {model} · conf {conf:.2f}{continued} ──")
+
+
     class J5TUIApp(App):
         """Main J5 Harness TUI Application."""
         
@@ -737,15 +927,42 @@ Compression:
             scrollbar-color-active: {PALETTE["border_focus"]};
             scrollbar-background: {PALETTE["bg_base"]};
         }}
+        #chat-scroll {{
+            height: 1fr;
+            border: tall {PALETTE["border_subtle"]};
+            background: {PALETTE["bg_base"]};
+            padding: 0 1;
+        }}
+        #chat-bar {{
+            height: auto;
+            margin-top: 1;
+        }}
+        #chat-bar Input {{
+            width: 1fr;
+        }}
+        #chat-bar Select {{
+            width: 26;
+        }}
         """
         
         BINDINGS = [
             Binding("q", "quit", "Quit"),
             Binding("ctrl+c", "quit", "Quit"),
+            Binding("a", "chat", "Ask"),
         ]
-        
+
+        def action_chat(self) -> None:
+            if type(self.screen).__name__ == "ChatScreen":
+                try:
+                    self.screen.query_one("#chat-input", Input).focus()
+                except Exception:
+                    pass
+            else:
+                self.push_screen(ChatScreen())
+
         def on_mount(self) -> None:
-            self.push_screen(DashboardScreen())
+            # Prompt-first: land on the chat console like opencode/claude/codex.
+            self.push_screen(ChatScreen())
 
 
 # ---------------------------------------------------------------------------
