@@ -135,13 +135,16 @@ class Orchestrator:
                                          chain=chain, on_text=on_text, session_id=session_id)
                 text = outcome.get("text", "")
                 conf = float(outcome.get("confidence", 0.0))
-                node.set_result(text, conf, outcome.get("model_id"), outcome.get("session_id"))
+                node.set_result(text, conf, outcome.get("model_id"),
+                                outcome.get("session_id"), outcome.get("usage"))
                 if conf < 0.5:
                     node.transition(TaskState.NEEDS_CRITIQUE)
                 else:
                     node.transition(TaskState.SUCCEEDED)
                 self.ledger.append(
-                    "result", tid, {"model_id": node.model_id, "confidence": node.confidence, "text": text}
+                    "result", tid, {"model_id": node.model_id, "confidence": node.confidence,
+                                    "text": text, "session_id": node.session_id,
+                                    "usage": node.usage or {}}
                 )
             except Exception as exc:  # structured error, never raw raise
                 err = structured_error("router-error", str(exc), task_id=tid)

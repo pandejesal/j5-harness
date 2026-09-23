@@ -477,8 +477,10 @@ def make_router_fn(
             shared.tracker.record_success(candidate, latency_ms)
             shared.feedback.record(candidate, latency_ms, completeness=1.0, accuracy=1.0)
             breaker.record_success()
+            usage = response.get("usage") if isinstance(response, dict) else None
             result = {"text": _extract_text(response), "confidence": 1.0, "model_id": candidate,
-                      "session_id": (response.get("usage") or {}).get("session_id")}
+                      "session_id": (usage or {}).get("session_id"),
+                      "usage": dict(usage) if isinstance(usage, dict) else {}}
             # 7. Cache set (read-only leaves only).
             shared.cache.set(cache_key, result)
             return result

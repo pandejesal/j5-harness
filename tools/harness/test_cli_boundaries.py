@@ -178,7 +178,7 @@ class CapabilitiesCommandTest(unittest.TestCase):
         cli.build_parser()
         for cmd in ("run", "probe", "watch", "tui", "capabilities",
                     "route", "status", "projects", "domains", "skills",
-                    "config", "benchmark", "doctor"):
+                    "config", "benchmark", "sessions", "doctor"):
             self.assertIn(cmd, cli.COMMAND_CAPABILITIES)
 
     def test_json_map(self):
@@ -214,8 +214,17 @@ class CapabilitiesCommandTest(unittest.TestCase):
             sys.stdout = old
         self.assertEqual(rc, 0)
         out = buf.getvalue()
-        for cmd in ("run", "probe", "watch", "route", "status", "tui", "capabilities"):
+        for cmd in ("run", "probe", "watch", "route", "status", "tui",
+                    "capabilities", "sessions"):
             self.assertIn(cmd, out)
+
+    def test_sessions_lists_recorded_turns(self):
+        import j5_cli.main as cli
+
+        env = {k: v for k, v in os.environ.items() if k != "J5_READONLY"}
+        with unittest.mock.patch.dict(os.environ, env, clear=True):
+            rc = cli.main(["sessions", "--limit", "5"])
+        self.assertEqual(rc, 0)
 
 
 if __name__ == "__main__":

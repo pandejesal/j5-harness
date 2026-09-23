@@ -104,7 +104,8 @@ COMMAND_CAPABILITIES: dict[str, dict[str, bool]] = {
     "skills":       {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
     "config":       {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
     "benchmark":    {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
-    "doctor":       {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "sessions":    {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
+    "doctor":      {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
     "capabilities": {"spawns_worker": False, "mutates_project": False, "mutates_harness_state": False},
     "tui":          {"spawns_worker": True,  "mutates_project": True,  "mutates_harness_state": True},
 }
@@ -442,6 +443,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     ctx = contexts[project]
 
     task_id = f"task-{int(time.time()) % 100000:05d}"
+    session_id = args.session or None
     ledger = DelegationLedger(ctx.ledger_path)
     shared = get_shared()
     router_fn = make_router_fn(ctx, shared, config)
@@ -450,11 +452,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not args.json:
         print(f"{color('Dispatching:', ANSI.ACCENT)} {task_id} -> {project} [{task_type}]")
         print(f"{color('Gateway:', ANSI.ACCENT)} {type(shared.adapter).__name__}")
+        if session_id:
+            print(f"{color('Session:', ANSI.ACCENT)} continuing {session_id}")
 
     dag = orch.decompose(prompt, [{"task_id": task_id, "prompt": prompt}])
-    dag = orch.run(dag, task_type=task_type)
+    dag = orch.run(dag, task_type=task_type, session_id=session_id)
     node = dag.nodes[task_id]
 
+    usage = getattr(node, "usage", None) or {}
     result = {
         "task_id": task_id,
         "project": project,
@@ -463,6 +468,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         "model_id": node.model_id,
         "confidence": float(node.confidence or 0.0),
         "text": node.result or "",
+        "session_id": getattr(node, "session_id", None),
+        "usage": usage,
         "ledger": str(ctx.ledger_path),
     }
     if node.state.name != "SUCCEEDED":
@@ -477,9 +484,66 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(separator())
         print(result["text"] or "(empty response)")
         print(separator())
+        tok = usage.get("tokens_total")
+        if tok is not None:
+            print(hint(f"Tokens: {usage.get('tokens_input', '?')}/{usage.get('tokens_output', '?')} "
+                       f"in/out of {tok} total · cost {usage.get('cost', 0)}"))
+        if result["session_id"]:
+            print(hint(f"Session: {result['session_id']} (re-run with --session to continue)"))
         print(hint(f"Ledger: {result['ledger']}"))
 
     return 0 if node.state.name == "SUCCEEDED" else 1
+
+
+def cmd_sessions(args: argparse.Namespace) -> int:
+    """List recent worker turns (tasks, models, sessions, usage) per project."""
+    limit = max(1, args.limit or 20)
+    only = args.project or None
+    config = load_config()
+
+    rows: list[dict] = []
+    for ctx in build_project_contexts(config, "coder"):
+        if only and ctx.name != only:
+            continue
+        try:
+            lines = ctx.ledger_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if entry.get("type") != "result":
+                continue
+            payload = entry.get("payload") or {}
+            usage = payload.get("usage") or {}
+            rows.append({
+                "project": ctx.name,
+                "task_id": entry.get("task_id", "-"),
+                "model_id": payload.get("model_id", "-"),
+                "confidence": payload.get("confidence", 0.0),
+                "session_id": payload.get("session_id") or "-",
+                "tokens": usage.get("tokens_total", "-"),
+                "ts": entry.get("ts", 0),
+            })
+    rows.sort(key=lambda r: r["ts"])
+    rows = rows[-limit:]
+
+    if args.json:
+        print(json.dumps(rows, indent=2, default=str))
+        return 0
+    print(f"{'project':<12} {'task':<10} {'model':<28} {'conf':<5} {'tokens':<8} session")
+    print("-" * 100)
+    for r in rows:
+        print(f"{r['project']:<12} {r['task_id']:<10} {str(r['model_id']):<28} "
+              f"{float(r['confidence'] or 0.0):<5.2f} {str(r['tokens']):<8} {r['session_id']}")
+    if not rows:
+        print(hint("No completed turns recorded yet — run `j5 run --prompt ...` first."))
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -544,6 +608,11 @@ def build_parser() -> argparse.ArgumentParser:
     
     # benchmark
     sub.add_parser("benchmark", parents=[json_sub], help="Run latency benchmarks")
+
+    # sessions
+    p = sub.add_parser("sessions", parents=[json_sub], help="List recent worker turns and sessions")
+    p.add_argument("--project", default=None, help="Only this project")
+    p.add_argument("--limit", type=int, default=20, help="Max rows to show")
     
     # doctor
     sub.add_parser("doctor", parents=[json_sub], help="Health check and diagnostics")
@@ -553,6 +622,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--project", default="wsb-alpha", help="Project name")
     p.add_argument("--task-type", default="coding", choices=["coding", "research", "analysis", "conversation"])
     p.add_argument("--prompt", required=True, help="Prompt to execute")
+    p.add_argument("--session", default=None,
+                   help="Continue an existing worker session (id printed by a prior run)")
 
     # tui (explicit; bare `j5` also lands here)
     sub.add_parser("tui", parents=[json_sub], help="Open the interactive terminal UI")
@@ -615,6 +686,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "watch": cmd_watch,
         "config": cmd_config,
         "benchmark": cmd_benchmark,
+        "sessions": cmd_sessions,
         "doctor": cmd_doctor,
         "run": cmd_run,
         "tui": cmd_tui,

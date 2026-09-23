@@ -51,6 +51,7 @@ class TaskNode:
     result: str | None = None
     model_id: str | None = None
     session_id: str | None = None  # worker session for multi-turn continuity
+    usage: dict | None = None  # token/cost usage from the dispatch backend
     error: dict | None = None
 
     def __post_init__(self) -> None:
@@ -82,12 +83,14 @@ class TaskNode:
         return self.attempts < self.max_attempts
 
     def set_result(self, result: str, confidence: float, model_id: str | None = None,
-                   session_id: str | None = None) -> None:
+                   session_id: str | None = None, usage: dict | None = None) -> None:
         self.result = result
         self.confidence = _clamp_confidence(confidence)
         self.model_id = model_id
         if session_id:
             self.session_id = session_id
+        if usage:
+            self.usage = dict(usage)
 
     def set_error(self, error: dict) -> None:
         self.error = dict(error)
