@@ -339,9 +339,12 @@ class PureForwardingTest(unittest.TestCase):
 
         from tools.harness.integration import build_project_contexts, make_router_fn
 
+        # NOTE: unique dir (NOT /tmp/wsb): _get_or_build_state() caches
+        # ProjectState globally, and other test classes trip the shared
+        # breakers for /tmp/wsb. A distinct dir => fresh breakers here.
         config = {
             "projects": {"wsb-alpha": {"enabled": True}},
-            "dirs": {"wsb-alpha": "/tmp/wsb"},
+            "dirs": {"wsb-alpha": "/tmp/wsb-pure"},
             "fallbackLadders": {"coder": ["mimo-v2.5-free"]},
             "context": {"target_tokens": 4000},
         }
@@ -363,11 +366,36 @@ class PureForwardingTest(unittest.TestCase):
         _, kwargs = adapter.send.call_args
         self.assertTrue(kwargs.get("pure"))
 
-    def test_router_fn_pure_defaults_none(self):
+    def test_router_fn_pure_auto_resolves(self):
+        # Short, non-code prompt -> auto-lean; long/code prompt -> full.
         router_fn, adapter = self._router_fn()
         router_fn("hi", task_id="t-pure-2", task_type="coding")
         _, kwargs = adapter.send.call_args
-        self.assertIsNone(kwargs.get("pure"))
+        self.assertTrue(kwargs.get("pure"))
+        router_fn("Refactor the authentication module to support OAuth2 "
+                  "logins across all of the repository services",
+                  task_id="t-pure-3", task_type="coding")
+        _, kwargs = adapter.send.call_args
+        self.assertFalse(kwargs.get("pure"))
+
+    def test_auto_pure_matrix(self):
+        from tools.router.cli_gateway import auto_pure, resolve_pure
+
+        self.assertTrue(auto_pure("What is the Sharpe ratio?"))
+        self.assertTrue(auto_pure("Reply with exactly: J5_OK"))
+        self.assertFalse(auto_pure("Fix the login bug in auth/session.py"))
+        self.assertFalse(auto_pure("Backtest a momentum strategy on NIFTY"))
+        self.assertFalse(auto_pure("x" * 500))
+        self.assertFalse(auto_pure(""))
+        self.assertEqual(resolve_pure(True, "anything at all here"), (True, "flag"))
+        self.assertEqual(resolve_pure(False, "hi"), (False, "flag-full"))
+        with patch.dict("os.environ", {"J5_PURE": "1"}):
+            self.assertEqual(resolve_pure(None, "a very long coding task " * 50), (True, "env"))
+        with patch.dict("os.environ", {"J5_PURE": "0"}):
+            self.assertEqual(resolve_pure(None, "hi"), (False, "env-full"))
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(resolve_pure(None, "hi"), (True, "auto"))
+            self.assertEqual(resolve_pure(None, "a very long coding task " * 50), (False, "auto-full"))
 
     def test_orchestrator_forwards_pure(self):
         from tools.delegation.delegation_engine import Orchestrator

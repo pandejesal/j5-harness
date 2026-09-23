@@ -1,0 +1,55 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test deps
+        run: pip install pytest
+
+      # The suite is stdlib-only, but several tests need WRITABLE project
+      # dirs (ledgers, skill roots, kilo bus) whose paths come from
+      # tools/reliability/reliability.config.json. On a fresh runner those
+      # paths don't exist, so create them (empty dirs are enough — tests
+      # use inline configs, temp dirs, or read-only access).
+      - name: Create writable dirs from config
+        shell: pwsh
+        run: |
+          $cfg = Get-Content tools/reliability/reliability.config.json | ConvertFrom-Json
+          $dirs = @()
+          foreach ($p in $cfg.dirs.PSObject.Properties) { $dirs += $p.Value }
+          if ($cfg.kilo.inbox) { $dirs += $cfg.kilo.inbox }
+          if ($cfg.kilo.interharness) { $dirs += $cfg.kilo.interharness }
+          foreach ($d in $dirs | Sort-Object -Unique) {
+            if ($d) {
+              New-Item -ItemType Directory -Force -Path $d | Out-Null
+              New-Item -ItemType Directory -Force -Path (Join-Path $d ".harness") | Out-Null
+            }
+          }
+
+      - name: Run test suite (live backends excluded)
+        run: >
+          python -m pytest
+          tools/domains/test_domains.py
+          tools/harness/test_integration_contracts.py
+          tools/harness/test_e2e_integration.py
+          tools/harness/test_cli_boundaries.py
+          tools/skills/ecosystem/contract_test.py
+          tools/router/test_cli_gateway.py
+          -q --tb=short
+
+      # tools/harness/test_bridge_hardening.py is intentionally NOT run:
+      # it needs the live agy backend (gate: J5_LIVE=1).

@@ -41,6 +41,7 @@ from tools.latency.context_compression import (
 from tools.router.fallback_chain import FallbackChainBuilder
 from tools.router.feedback_loop import FeedbackLoop
 from tools.router.free_model_router import FreeModelRouter
+from tools.router.cli_gateway import resolve_pure
 from tools.router.gateway_adapters import GatewayError, GatewayInterface, ZenGatewayAdapter
 from tools.router.health_probe import HealthTracker
 from tools.router.model_registry import MODELS, default_chain
@@ -410,6 +411,10 @@ def make_router_fn(
         session_id: str | None = None,
         pure: bool | None = None,
     ) -> dict[str, Any]:
+        # Auto-lean lives here so CLI, TUI, and desktop all share one
+        # decision point: explicit flags/env win, else short non-code
+        # prompts go lean.
+        pure, _ = resolve_pure(pure, prompt)
         # 1. Skill leaf: task_id bound to a skill at decompose time.
         leaf = ctx.leaf_skills.get(task_id)
         if leaf is not None:

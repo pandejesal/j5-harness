@@ -49,6 +49,50 @@ DEFAULT_PROVIDER_PREFIX = "opencode"
 DEFAULT_TIMEOUT_S = 600.0  # model turns can run several minutes
 DEFAULT_TITLE_PREFIX = "j5"
 
+PURE_AUTO_MAX_CHARS = 400
+
+# Short prompts WITHOUT code/research action signals go lean automatically.
+# Conservative by design: anything ambiguous keeps full context.
+_CODE_SIGNALS_RE = re.compile(
+    r"\b(fix|refactor|implement|build|create|edit|update|delete|debug|write|"
+    r"test|review|migrate|deploy|analy[sz]e|backtest|model|data|file|module|"
+    r"function|class|repo|codebase|script|server|endpoint|database|commit|"
+    r"branch|merge|strategy|portfolio|risk)\b"
+    r"|[/\\][\w.\- ]{2,}"
+    r"|[\w\-]+\.(py|js|ts|tsx|jsx|json|md|ps1|yaml|yml|toml|sql|rs|go|java|cpp|h|css|html)",
+    re.IGNORECASE,
+)
+
+
+def auto_pure(prompt: str, max_chars: int = PURE_AUTO_MAX_CHARS) -> bool:
+    """True when *prompt* looks trivially answerable without plugins."""
+    text = (prompt or "").strip()
+    if not text or len(text) >= max_chars:
+        return False
+    return _CODE_SIGNALS_RE.search(text) is None
+
+
+def resolve_pure(explicit: bool | None, prompt: str = "") -> tuple[bool, str]:
+    """Resolve lean/full dispatch: explicit flag > J5_PURE env > auto heuristic.
+
+    Returns (effective, reason) where reason is one of flag/flag-full,
+    env/env-full, auto/auto-full. Single decision point used by the CLI,
+    the router, and the adapter default.
+    """
+    if explicit is True:
+        return True, "flag"
+    if explicit is False:
+        return False, "flag-full"
+    env = os.environ.get("J5_PURE", "").strip().lower()
+    if env in ("1", "true", "yes"):
+        return True, "env"
+    if env in ("0", "false", "no"):
+        return False, "env-full"
+    if prompt and auto_pure(prompt):
+        return True, "auto"
+    return False, "auto-full"
+
+
 _RATE_LIMIT_RE = re.compile(r"429|rate.?limit|retry-after|too many requests", re.IGNORECASE)
 _AUTH_RE = re.compile(r"\b401\b|unauthorized|invalid api key|authentication", re.IGNORECASE)
 _RETRY_AFTER_RE = re.compile(r"retry[^0-9]{0,12}(\d+)", re.IGNORECASE)
@@ -175,7 +219,7 @@ class OpencodeCliAdapter(GatewayInterface):
         max_in_flight: int = 1,
         provider_prefix: str = DEFAULT_PROVIDER_PREFIX,
         extra_args: list[str] | None = None,
-        pure: bool = False,
+        pure: bool | None = None,
     ) -> None:
         resolved = binary or find_opencode_binary()
         if not resolved:
@@ -193,7 +237,7 @@ class OpencodeCliAdapter(GatewayInterface):
         # MCP servers, global AGENTS.md) — ~10x fewer input tokens for
         # simple Q&A. Default full context preserved for coding tasks.
         # J5_PURE=1 sets the process default; per-call `pure=` overrides it.
-        self.pure = pure or os.environ.get("J5_PURE", "").strip().lower() in ("1", "true", "yes")
+        self.pure, _ = resolve_pure(pure)
         self._lock = threading.Lock()
         self._alock = asyncio.Lock()
         self._in_flight = 0

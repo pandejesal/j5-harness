@@ -3,7 +3,7 @@
 ![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-green)
 ![platform](https://img.shields.io/badge/platform-Windows%20%2F%20PowerShell-lightgrey)
-![tests](https://img.shields.io/badge/tests-183%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-184%20passing-brightgreen)
 
 > **One command center for all your projects.** See everything, delegate anything —
 > small tasks go straight to a worker, big tasks fan out across a fleet, and every
@@ -60,8 +60,10 @@ j5 run --project wsb-alpha --task-type coding --prompt "Backtest a momentum stra
 # continue the same worker session later (multi-turn; id printed by any run)
 j5 run --project wsb-alpha --task-type coding --session <session-id> --prompt "Now add transaction costs"
 
-# lean dispatch for simple Q&A (~3x fewer input tokens, no plugins)
-j5 run --project wsb-alpha --task-type coding --pure --prompt "What is the Sharpe ratio formula?"
+# lean dispatch is automatic for short, non-code prompts (no plugins, far fewer
+# input tokens); --pure forces it, --no-pure forces full context, J5_PURE=1
+# sets the process default
+j5 run --project wsb-alpha --task-type coding --prompt "What is the Sharpe ratio formula?"
 
 # review recent turns: model, confidence, tokens, sessions
 j5 sessions --limit 20
@@ -136,7 +138,7 @@ OpenCode-compatible runner:
 
 ## Tests
 
-183 tests green, plus 3 live-backend tests that skip by default:
+184 tests green, plus 3 live-backend tests that skip by default:
 
 ```powershell
 python -m pytest tools/domains/test_domains.py tools/harness/test_integration_contracts.py `
