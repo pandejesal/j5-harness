@@ -98,7 +98,8 @@ class Orchestrator:
         return [m for m in default_chain(task_type)]
 
     def run(self, dag: DelegationDAG, task_type: str = "coding", max_in_flight: int = 1,
-            on_text=None, session_id: str | None = None) -> DelegationDAG:
+            on_text=None, session_id: str | None = None,
+            pure: bool | None = None) -> DelegationDAG:
         """Execute leaves in topological order.
 
         ``on_text`` streams answer chunks live (TUI/desktop); ``session_id``
@@ -132,7 +133,8 @@ class Orchestrator:
             try:
                 # Serialized: 1 in-flight by default (shared Zen free-tier key).
                 outcome = self.router_fn(node.prompt, task_id=tid, task_type=task_type,
-                                         chain=chain, on_text=on_text, session_id=session_id)
+                                         chain=chain, on_text=on_text, session_id=session_id,
+                                         pure=pure)
                 text = outcome.get("text", "")
                 conf = float(outcome.get("confidence", 0.0))
                 node.set_result(text, conf, outcome.get("model_id"),

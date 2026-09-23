@@ -3,7 +3,7 @@
 ![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-green)
 ![platform](https://img.shields.io/badge/platform-Windows%20%2F%20PowerShell-lightgrey)
-![tests](https://img.shields.io/badge/tests-177%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-183%20passing-brightgreen)
 
 > **One command center for all your projects.** See everything, delegate anything —
 > small tasks go straight to a worker, big tasks fan out across a fleet, and every
@@ -56,6 +56,20 @@ j5
 
 # delegate a task
 j5 run --project wsb-alpha --task-type coding --prompt "Backtest a momentum strategy on NIFTY"
+
+# continue the same worker session later (multi-turn; id printed by any run)
+j5 run --project wsb-alpha --task-type coding --session <session-id> --prompt "Now add transaction costs"
+
+# lean dispatch for simple Q&A (~3x fewer input tokens, no plugins)
+j5 run --project wsb-alpha --task-type coding --pure --prompt "What is the Sharpe ratio formula?"
+
+# review recent turns: model, confidence, tokens, sessions
+j5 sessions --limit 20
+
+# mutation boundary: refuse anything that spawns or writes (exit 2)
+j5 --readonly status             # allowed (read-only)
+j5 --readonly run --prompt "x"   # refused
+j5 capabilities                  # the per-command map (JSON with --json)
 
 # desktop command center (no console window, logs to j5_desktop\*.log)
 powershell -ExecutionPolicy Bypass -File j5_desktop\launch-modern.ps1
@@ -122,7 +136,7 @@ OpenCode-compatible runner:
 
 ## Tests
 
-177 tests green, plus 3 live-backend tests that skip by default:
+183 tests green, plus 3 live-backend tests that skip by default:
 
 ```powershell
 python -m pytest tools/domains/test_domains.py tools/harness/test_integration_contracts.py `

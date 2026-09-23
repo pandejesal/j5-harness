@@ -408,6 +408,7 @@ def make_router_fn(
         model_id: str | None = None,
         on_text=None,
         session_id: str | None = None,
+        pure: bool | None = None,
     ) -> dict[str, Any]:
         # 1. Skill leaf: task_id bound to a skill at decompose time.
         leaf = ctx.leaf_skills.get(task_id)
@@ -459,7 +460,7 @@ def make_router_fn(
             try:
                 response = shared.adapter.send(
                     candidate, text, workdir=str(ctx.dir), task_id=task_id,
-                    on_text=on_text, session_id=session_id,
+                    on_text=on_text, session_id=session_id, pure=pure,
                 )
             except GatewayError as exc:
                 last_error = str(exc)

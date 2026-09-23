@@ -175,6 +175,7 @@ class OpencodeCliAdapter(GatewayInterface):
         max_in_flight: int = 1,
         provider_prefix: str = DEFAULT_PROVIDER_PREFIX,
         extra_args: list[str] | None = None,
+        pure: bool = False,
     ) -> None:
         resolved = binary or find_opencode_binary()
         if not resolved:
@@ -188,6 +189,11 @@ class OpencodeCliAdapter(GatewayInterface):
         self.max_in_flight = max(1, max_in_flight)
         self.provider_prefix = provider_prefix
         self.extra_args = list(extra_args or [])
+        # Lean mode: `opencode run --pure` skips external plugins (skills,
+        # MCP servers, global AGENTS.md) — ~10x fewer input tokens for
+        # simple Q&A. Default full context preserved for coding tasks.
+        # J5_PURE=1 sets the process default; per-call `pure=` overrides it.
+        self.pure = pure or os.environ.get("J5_PURE", "").strip().lower() in ("1", "true", "yes")
         self._lock = threading.Lock()
         self._alock = asyncio.Lock()
         self._in_flight = 0
@@ -200,7 +206,7 @@ class OpencodeCliAdapter(GatewayInterface):
         return self.workdir
 
     def _build_cmd(self, cli_model: str, prompt: str, cwd: Path, title: str,
-                   session_id: str | None = None) -> list[str]:
+                   session_id: str | None = None, pure: bool = False) -> list[str]:
         cmd = [
             self.binary, "run", prompt,
             "-m", cli_model,
@@ -209,6 +215,8 @@ class OpencodeCliAdapter(GatewayInterface):
             "--format", "json",
             *self.extra_args,
         ]
+        if pure:
+            cmd += ["--pure"]
         if session_id:
             # Continue an existing worker session (multi-turn continuity).
             cmd += ["--session", session_id]
@@ -303,6 +311,7 @@ class OpencodeCliAdapter(GatewayInterface):
         task_id: str | None = None,
         session_id: str | None = None,
         on_text: Callable[[str], None] | None = None,
+        pure: bool | None = None,
     ) -> dict:
         """Run one headless `opencode run` and return its answer.
 
@@ -313,12 +322,14 @@ class OpencodeCliAdapter(GatewayInterface):
         ``on_text`` receives each answer chunk the moment it arrives, so
         the TUI/desktop can stream live instead of hanging and dumping.
         ``session_id`` continues an existing worker session (multi-turn).
+        ``pure`` (None = adapter default) toggles lean no-plugin dispatch.
         """
         timeout = timeout_s or self.timeout_s
         cli_model = cli_model_id(model, self.provider_prefix)
         cwd = self._resolve_cwd(workdir)
         title = f"{DEFAULT_TITLE_PREFIX}-{task_id}" if task_id else DEFAULT_TITLE_PREFIX
-        cmd = self._build_cmd(cli_model, prompt, cwd, title, session_id)
+        effective_pure = self.pure if pure is None else pure
+        cmd = self._build_cmd(cli_model, prompt, cwd, title, session_id, effective_pure)
         env = {
             **os.environ,
             "PYTHONIOENCODING": "utf-8",

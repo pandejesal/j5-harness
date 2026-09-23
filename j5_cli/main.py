@@ -444,6 +444,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     task_id = f"task-{int(time.time()) % 100000:05d}"
     session_id = args.session or None
+    pure = True if args.pure else None
     ledger = DelegationLedger(ctx.ledger_path)
     shared = get_shared()
     router_fn = make_router_fn(ctx, shared, config)
@@ -454,9 +455,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"{color('Gateway:', ANSI.ACCENT)} {type(shared.adapter).__name__}")
         if session_id:
             print(f"{color('Session:', ANSI.ACCENT)} continuing {session_id}")
+        if pure:
+            print(f"{color('Mode:', ANSI.ACCENT)} pure (lean, no plugins)")
 
     dag = orch.decompose(prompt, [{"task_id": task_id, "prompt": prompt}])
-    dag = orch.run(dag, task_type=task_type, session_id=session_id)
+    dag = orch.run(dag, task_type=task_type, session_id=session_id, pure=pure)
     node = dag.nodes[task_id]
 
     usage = getattr(node, "usage", None) or {}
@@ -624,6 +627,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--prompt", required=True, help="Prompt to execute")
     p.add_argument("--session", default=None,
                    help="Continue an existing worker session (id printed by a prior run)")
+    p.add_argument("--pure", action="store_true",
+                   help="Lean dispatch: no external plugins (~10x fewer input tokens; for simple Q&A)")
 
     # tui (explicit; bare `j5` also lands here)
     sub.add_parser("tui", parents=[json_sub], help="Open the interactive terminal UI")

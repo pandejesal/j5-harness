@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import time
 import unittest
@@ -298,6 +299,86 @@ class BuildGatewayTest(unittest.TestCase):
              patch("tools.router.cli_gateway.find_opencode_binary", return_value=None):
             gw = build_gateway()
         self.assertIsInstance(gw, ZenGatewayAdapter)
+
+
+class PureModeTest(unittest.TestCase):
+    def test_build_cmd_pure_flag(self):
+        adapter = OpencodeCliAdapter(binary="C:/fake/opencode.exe", workdir="C:/fake/wd")
+        plain = adapter._build_cmd("opencode/mimo-v2.5-free", "hi", Path("C:/fake"), "j5")
+        self.assertNotIn("--pure", plain)
+        lean = adapter._build_cmd("opencode/mimo-v2.5-free", "hi", Path("C:/fake"), "j5", pure=True)
+        self.assertIn("--pure", lean)
+
+    def test_env_default(self):
+        with patch.dict("os.environ", {"J5_PURE": "1"}):
+            adapter = OpencodeCliAdapter(binary="C:/fake/opencode.exe", workdir="C:/fake/wd")
+        self.assertTrue(adapter.pure)
+        fake = FakePopen(_json_stream(["ok"]).splitlines(keepends=True))
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake) as m:
+            with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
+                adapter.send("mimo-v2.5-free", "hi")
+        self.assertIn("--pure", m.call_args[0][0])
+
+    def test_per_call_overrides_env_off(self):
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("J5_PURE", None)
+            adapter = OpencodeCliAdapter(binary="C:/fake/opencode.exe", workdir="C:/fake/wd")
+        self.assertFalse(adapter.pure)
+        fake = FakePopen(_json_stream(["ok"]).splitlines(keepends=True))
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake) as m:
+            with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
+                adapter.send("mimo-v2.5-free", "hi", pure=True)
+        self.assertIn("--pure", m.call_args[0][0])
+
+
+class PureForwardingTest(unittest.TestCase):
+    """pure= threads router_fn -> adapter.send and Orchestrator -> router_fn."""
+
+    def _router_fn(self):
+        from types import SimpleNamespace
+
+        from tools.harness.integration import build_project_contexts, make_router_fn
+
+        config = {
+            "projects": {"wsb-alpha": {"enabled": True}},
+            "dirs": {"wsb-alpha": "/tmp/wsb"},
+            "fallbackLadders": {"coder": ["mimo-v2.5-free"]},
+            "context": {"target_tokens": 4000},
+        }
+        ctx = build_project_contexts(config, "coder")[0]
+        adapter = MagicMock()
+        adapter.send.return_value = {"output": "ok", "usage": {}}
+        cache = MagicMock()
+        cache.get.return_value = None
+        tracker = MagicMock()
+        tracker.is_quarantined.return_value = False
+        tracker.in_retry_after.return_value = False
+        shared = SimpleNamespace(cache=cache, tracker=tracker,
+                                 feedback=MagicMock(), adapter=adapter)
+        return make_router_fn(ctx, shared, config), adapter
+
+    def test_router_fn_forwards_pure(self):
+        router_fn, adapter = self._router_fn()
+        router_fn("hi", task_id="t-pure-1", task_type="coding", pure=True)
+        _, kwargs = adapter.send.call_args
+        self.assertTrue(kwargs.get("pure"))
+
+    def test_router_fn_pure_defaults_none(self):
+        router_fn, adapter = self._router_fn()
+        router_fn("hi", task_id="t-pure-2", task_type="coding")
+        _, kwargs = adapter.send.call_args
+        self.assertIsNone(kwargs.get("pure"))
+
+    def test_orchestrator_forwards_pure(self):
+        from tools.delegation.delegation_engine import Orchestrator
+
+        mock_router = MagicMock(return_value={"text": "ok", "confidence": 1.0,
+                                              "model_id": "mimo-v2.5-free"})
+        orch = Orchestrator(ledger=MagicMock(), router_fn=mock_router)
+        dag = orch.decompose("root", [{"task_id": "t-pure-3", "prompt": "hi"}])
+        orch.run(dag, task_type="coding", pure=True)
+        _, kwargs = mock_router.call_args
+        self.assertTrue(kwargs.get("pure"))
 
 
 if __name__ == "__main__":
