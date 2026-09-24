@@ -203,6 +203,8 @@ class Backend:
                 "model_id": node.model_id,
                 "confidence": float(node.confidence or 0.0),
                 "text": (node.result or "")[:4000],
+                "session_id": getattr(node, "session_id", None),
+                "usage": getattr(node, "usage", None) or {},
                 "ledger": str(ctx.ledger_path),
             })
         except Exception as exc:  # noqa: BLE001
@@ -1408,8 +1410,11 @@ class MainWindow(QMainWindow):
             self.command_view.add_feed(f"{task_id} failed: {res.error.splitlines()[0][:140]}")
             return
         d = res.payload
+        _usage = d.get("usage") or {}
+        _sess = d.get("session_id") or "-"
         self.command_view.add_feed(
-            f"{task_id} → {d['state']} via {d['model_id']} (conf {d['confidence']:.2f})"
+            f"{task_id} → {d['state']} via {d['model_id']} (conf {d['confidence']:.2f}, "
+            f"tokens {_usage.get('tokens_total', '-')}, session {_sess})"
         )
         self.logs_view.refresh()
 

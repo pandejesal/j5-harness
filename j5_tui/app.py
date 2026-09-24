@@ -668,6 +668,8 @@ Compression:
 
         def _submit(self) -> None:
             if self.busy:
+                self._add("…a turn is already running — Stop cancels it, "
+                          "finished turns land in the ledger either way.")
                 return
             try:
                 prompt = self.query_one("#chat-input", Input).value.strip()

@@ -227,5 +227,28 @@ class CapabilitiesCommandTest(unittest.TestCase):
         self.assertEqual(rc, 0)
 
 
+class RunPromptSourceTest(unittest.TestCase):
+    """Prompt sourcing is validated before anything executes (no dispatch)."""
+
+    def test_neither_prompt_nor_file(self):
+        import j5_cli.main as cli
+
+        self.assertEqual(cli.main(["run", "--project", "wsb-alpha"]), 1)
+
+    def test_both_prompt_and_file(self):
+        import j5_cli.main as cli
+
+        self.assertEqual(cli.main(["run", "--project", "wsb-alpha",
+                                   "--prompt", "x",
+                                   "--prompt-file", "y.md"]), 1)
+
+    def test_missing_prompt_file(self):
+        import j5_cli.main as cli
+
+        self.assertEqual(cli.main(["run", "--project", "wsb-alpha",
+                                   "--prompt-file",
+                                   "C:/definitely-not-here-xyz.md"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

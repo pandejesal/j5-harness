@@ -429,9 +429,24 @@ def cmd_run(args: argparse.Namespace) -> int:
     project = args.project or "wsb-alpha"
     task_type = args.task_type or "coding"
     prompt = args.prompt or ""
+    prompt_file = getattr(args, "prompt_file", None)
 
+    # Prompt sourcing validated before anything executes (no dispatch,
+    # no ledger, no config writes on any of these paths).
+    if prompt and prompt_file:
+        print(fail_line("Error: use exactly one of --prompt or --prompt-file",
+                        enabled=supports_color(sys.stderr)), file=sys.stderr)
+        return 1
+    if prompt_file and not prompt:
+        try:
+            prompt = Path(prompt_file).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(fail_line(f"Error: cannot read --prompt-file: {exc}",
+                            enabled=supports_color(sys.stderr)), file=sys.stderr)
+            return 1
     if not prompt:
-        print(fail_line("Error: --prompt required", enabled=supports_color(sys.stderr)), file=sys.stderr)
+        print(fail_line("Error: --prompt or --prompt-file required",
+                        enabled=supports_color(sys.stderr)), file=sys.stderr)
         return 1
 
     config = load_config()
@@ -625,7 +640,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("run", parents=[json_sub], help="Execute a task")
     p.add_argument("--project", default="wsb-alpha", help="Project name")
     p.add_argument("--task-type", default="coding", choices=["coding", "research", "analysis", "conversation"])
-    p.add_argument("--prompt", required=True, help="Prompt to execute")
+    p.add_argument("--prompt", required=False, default=None, help="Prompt to execute")
+    p.add_argument("--prompt-file", default=None,
+                   help="Read the prompt from a file (use instead of --prompt; avoids shell-quoting limits)")
     p.add_argument("--session", default=None,
                    help="Continue an existing worker session (id printed by a prior run)")
     p.add_argument("--pure", dest="pure", action="store_true", default=None,
@@ -729,7 +746,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         parser.print_help()
         return 1
 
-    return commands[effective](args)
+    try:
+        return commands[effective](args)
+    except KeyboardInterrupt:
+        # Ctrl+C mid-dispatch (e.g. during a long worker turn): clean exit,
+        # no traceback. The worker subprocess is terminated with its parent.
+        print("\nInterrupted.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":
