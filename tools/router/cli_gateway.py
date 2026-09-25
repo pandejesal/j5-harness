@@ -93,6 +93,43 @@ def resolve_pure(explicit: bool | None, prompt: str = "") -> tuple[bool, str]:
     return False, "auto-full"
 
 
+TIER_AUTO_MIN_CHARS = 400
+TIER_AUTO_BIG_CHARS = 1500
+
+# Complexity signals for tier auto-detection. Conservative: only long,
+# code-heavy prompts escalate (cost-safe default is free).
+_TIER_CODE_RE = re.compile(
+    r"\b(architect|system|design|migrate|refactor|performance|security|"
+    r"database|distributed|concurren|scalab)\w*\b",
+    re.IGNORECASE,
+)
+
+
+def auto_tier(prompt: str) -> str:
+    """'frontier' for big/complex prompts, else 'free'. Cost-safe default."""
+    text = (prompt or "").strip()
+    if len(text) > TIER_AUTO_BIG_CHARS:
+        return "frontier"
+    if len(text) > TIER_AUTO_MIN_CHARS and _TIER_CODE_RE.search(text):
+        return "frontier"
+    return "free"
+
+
+def resolve_tier(explicit: str | None, prompt: str = "") -> tuple[str, str]:
+    """Resolve free/frontier dispatch tier: flag > J5_TIER env > auto.
+
+    Returns (tier, reason); reason is flag/env/auto. Unknown explicit
+    values fall through to env/auto rather than raising (CLI choices
+    already constrain the flag).
+    """
+    if explicit in ("free", "frontier"):
+        return explicit, "flag"
+    env = os.environ.get("J5_TIER", "").strip().lower()
+    if env in ("free", "frontier"):
+        return env, "env"
+    return auto_tier(prompt), "auto"
+
+
 _RATE_LIMIT_RE = re.compile(r"429|rate.?limit|retry-after|too many requests", re.IGNORECASE)
 _AUTH_RE = re.compile(r"\b401\b|unauthorized|invalid api key|authentication", re.IGNORECASE)
 _RETRY_AFTER_RE = re.compile(r"retry[^0-9]{0,12}(\d+)", re.IGNORECASE)
@@ -446,6 +483,10 @@ __all__ = [
     "MODEL_MAP",
     "DEFAULT_PROVIDER_PREFIX",
     "DEFAULT_TIMEOUT_S",
+    "TIER_AUTO_MIN_CHARS",
+    "TIER_AUTO_BIG_CHARS",
+    "auto_tier",
+    "resolve_tier",
     "find_opencode_binary",
     "cli_model_id",
     "extract_opencode_text",

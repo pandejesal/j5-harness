@@ -99,7 +99,7 @@ class Orchestrator:
 
     def run(self, dag: DelegationDAG, task_type: str = "coding", max_in_flight: int = 1,
             on_text=None, session_id: str | None = None,
-            pure: bool | None = None) -> DelegationDAG:
+            pure: bool | None = None, tier: str | None = None) -> DelegationDAG:
         """Execute leaves in topological order.
 
         ``on_text`` streams answer chunks live (TUI/desktop); ``session_id``
@@ -134,11 +134,12 @@ class Orchestrator:
                 # Serialized: 1 in-flight by default (shared Zen free-tier key).
                 outcome = self.router_fn(node.prompt, task_id=tid, task_type=task_type,
                                          chain=chain, on_text=on_text, session_id=session_id,
-                                         pure=pure)
+                                         pure=pure, tier=tier)
                 text = outcome.get("text", "")
                 conf = float(outcome.get("confidence", 0.0))
                 node.set_result(text, conf, outcome.get("model_id"),
-                                outcome.get("session_id"), outcome.get("usage"))
+                                outcome.get("session_id"), outcome.get("usage"),
+                                outcome.get("tier"), outcome.get("tier_note"))
                 if conf < 0.5:
                     node.transition(TaskState.NEEDS_CRITIQUE)
                 else:
@@ -146,7 +147,8 @@ class Orchestrator:
                 self.ledger.append(
                     "result", tid, {"model_id": node.model_id, "confidence": node.confidence,
                                     "text": text, "session_id": node.session_id,
-                                    "usage": node.usage or {}}
+                                    "usage": node.usage or {}, "tier": node.tier,
+                                    "tier_note": node.tier_note}
                 )
             except Exception as exc:  # structured error, never raw raise
                 err = structured_error("router-error", str(exc), task_id=tid)

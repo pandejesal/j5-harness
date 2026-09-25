@@ -41,7 +41,7 @@ from tools.latency.context_compression import (
 from tools.router.fallback_chain import FallbackChainBuilder
 from tools.router.feedback_loop import FeedbackLoop
 from tools.router.free_model_router import FreeModelRouter
-from tools.router.cli_gateway import resolve_pure
+from tools.router.cli_gateway import resolve_pure, resolve_tier
 from tools.router.gateway_adapters import (
     FallbackGateway,
     GatewayError,
@@ -141,7 +141,14 @@ class SyncCircuitBreaker:
 
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
-    """Load reliability.config.json (defaults to the repo config)."""
+    """Load reliability.config.json.
+
+    Resolution: explicit path > ``J5_CONFIG`` env (Linux/CI overrides with
+    platform-native dirs) > repo default. A malformed env path raises like
+    a missing file — never silently ignored.
+    """
+    if path is None:
+        path = os.environ.get("J5_CONFIG", "")
     config_path = Path(path) if path else CONFIG_PATH
     with config_path.open("r", encoding="utf-8") as fh:
         return json.load(fh)
@@ -355,10 +362,15 @@ def _candidate_models(
     ctx: ProjectContext,
     task_type: str,
     shared: SharedState,
+    tier: str = "free",
+    frontier_models: list[str] | None = None,
 ) -> list[str]:
-    """Ordered dispatch candidates: explicit model > caller chain > role chain > router pick."""
+    """Ordered dispatch candidates: explicit model > frontier pool (tier) >
+    caller chain > role chain > router pick."""
     if model_id:
         return [model_id]
+    if tier == "frontier":
+        return list(dict.fromkeys(frontier_models or []))
     if chain:
         return list(dict.fromkeys(chain))
     if ctx.role_chain:
@@ -436,11 +448,29 @@ def make_router_fn(
         on_text=None,
         session_id: str | None = None,
         pure: bool | None = None,
+        tier: str | None = None,
     ) -> dict[str, Any]:
         # Auto-lean lives here so CLI, TUI, and desktop all share one
         # decision point: explicit flags/env win, else short non-code
         # prompts go lean.
         pure, _ = resolve_pure(pure, prompt)
+        # Tier routing shares the same single-decision-point shape: an
+        # unconfigured frontier pool degrades to free WITH a note (never
+        # silently), while configured-but-unregistered models fail loud
+        # (registry entry required so health/ledger stay uniform).
+        tier, tier_why = resolve_tier(tier, prompt)
+        frontier_models = list((config.get("tiers", {}) or {}).get("frontier_models", []) or [])
+        tier_note = None
+        if tier == "frontier":
+            if not frontier_models:
+                tier, tier_note = "free", "no frontier_models configured; using free pool"
+            else:
+                unknown = [m for m in frontier_models if m not in MODELS]
+                if unknown:
+                    return {"text": "", "confidence": 0.0, "model_id": model_id,
+                            "error": "frontier models not in registry "
+                                     f"({', '.join(unknown)}); add a MODELS entry per model",
+                            "tier": "frontier", "tier_note": None}
         # 1. Skill leaf: task_id bound to a skill at decompose time.
         leaf = ctx.leaf_skills.get(task_id)
         if leaf is not None:
@@ -474,7 +504,8 @@ def make_router_fn(
 
         # 3 + 4 + 6. Breaker gate, model pick, dispatch with fallback.
         last_error: str | None = None
-        for candidate in _candidate_models(model_id, chain, ctx, task_type, shared):
+        for candidate in _candidate_models(model_id, chain, ctx, task_type, shared,
+                                           tier=tier, frontier_models=frontier_models):
             # Config ladders may list models absent from the registry
             # (e.g. muse-spark-1.2-contributor-free); the tracker raises
             # ValueError for unknown models, so skip them outright.
@@ -523,7 +554,8 @@ def make_router_fn(
             usage = response.get("usage") if isinstance(response, dict) else None
             result = {"text": _extract_text(response), "confidence": 1.0, "model_id": candidate,
                       "session_id": (usage or {}).get("session_id"),
-                      "usage": dict(usage) if isinstance(usage, dict) else {}}
+                      "usage": dict(usage) if isinstance(usage, dict) else {},
+                      "tier": tier, "tier_note": tier_note}
             # 7. Cache set (read-only leaves only).
             shared.cache.set(cache_key, result)
             return result

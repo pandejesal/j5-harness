@@ -452,5 +452,87 @@ class ProxyEnvTest(unittest.TestCase):
         self.assertEqual(adapter.proxy_url, "http://127.0.0.1:8082")
 
 
+class TierRoutingTest(unittest.TestCase):
+    def test_auto_tier_matrix(self):
+        from tools.router.cli_gateway import auto_tier, resolve_tier
+
+        self.assertEqual(auto_tier("hi"), "free")
+        self.assertEqual(auto_tier("What is 2+2?"), "free")
+        self.assertEqual(auto_tier("x" * 2000), "frontier")
+        self.assertEqual(
+            auto_tier("Refactor the authentication system for horizontal "
+                      "scalability across regions " + "x" * 400),
+            "frontier")
+        self.assertEqual(auto_tier("Fix the login bug"), "free")
+        self.assertEqual(resolve_tier("frontier", "hi"), ("frontier", "flag"))
+        self.assertEqual(resolve_tier("free", "x" * 5000), ("free", "flag"))
+        with patch.dict("os.environ", {"J5_TIER": "frontier"}):
+            self.assertEqual(resolve_tier(None, "hi"), ("frontier", "env"))
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(resolve_tier(None, "hi"), ("free", "auto"))
+
+    def _router_fn(self, tiers):
+        from types import SimpleNamespace
+
+        from tools.harness.integration import build_project_contexts, make_router_fn
+
+        config = {
+            "projects": {"wsb-alpha": {"enabled": True}},
+            "dirs": {"wsb-alpha": "/tmp/wsb-tier"},
+            "fallbackLadders": {"coder": ["mimo-v2.5-free"]},
+            "context": {"target_tokens": 4000},
+            "tiers": tiers,
+        }
+        ctx = build_project_contexts(config, "coder")[0]
+        adapter = MagicMock()
+        adapter.send.return_value = {"output": "ok", "usage": {}}
+        cache = MagicMock()
+        cache.get.return_value = None
+        tracker = MagicMock()
+        tracker.is_quarantined.return_value = False
+        tracker.in_retry_after.return_value = False
+        shared = SimpleNamespace(cache=cache, tracker=tracker,
+                                 feedback=MagicMock(), adapter=adapter)
+        return make_router_fn(ctx, shared, config), adapter
+
+    def test_frontier_pool_selected(self):
+        router_fn, adapter = self._router_fn(
+            {"frontier_models": ["nemotron-3-ultra-free"]})
+        result = router_fn("design a system", task_id="t-tier-1",
+                           task_type="coding", tier="frontier")
+        self.assertEqual(result["model_id"], "nemotron-3-ultra-free")
+        self.assertEqual(result["tier"], "frontier")
+        self.assertEqual(result["confidence"], 1.0)
+
+    def test_unconfigured_frontier_downgrades_with_note(self):
+        router_fn, adapter = self._router_fn({})
+        result = router_fn("design a system", task_id="t-tier-2",
+                           task_type="coding", tier="frontier")
+        self.assertEqual(result["tier"], "free")
+        self.assertIn("no frontier_models", result["tier_note"])
+        self.assertEqual(result["confidence"], 1.0)
+
+    def test_unregistered_frontier_fails_loud(self):
+        router_fn, adapter = self._router_fn(
+            {"frontier_models": ["nope-model"]})
+        result = router_fn("design a system", task_id="t-tier-3",
+                           task_type="coding", tier="frontier")
+        self.assertEqual(result["confidence"], 0.0)
+        self.assertIn("not in registry", result["error"])
+        adapter.send.assert_not_called()
+
+    def test_orchestrator_forwards_tier(self):
+        from tools.delegation.delegation_engine import Orchestrator
+
+        mock_router = MagicMock(return_value={"text": "ok", "confidence": 1.0,
+                                              "model_id": "mimo-v2.5-free"})
+        orch = Orchestrator(ledger=MagicMock(), router_fn=mock_router)
+        dag = orch.decompose("root", [{"task_id": "t-tier-4", "prompt": "hi"}])
+        dag = orch.run(dag, task_type="coding", tier="frontier")
+        _, kwargs = mock_router.call_args
+        self.assertEqual(kwargs.get("tier"), "frontier")
+        self.assertEqual(dag.nodes["t-tier-4"].tier, "free")
+
+
 if __name__ == "__main__":
     unittest.main()

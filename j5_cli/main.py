@@ -473,9 +473,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"{color('Session:', ANSI.ACCENT)} continuing {session_id}")
         print(f"{color('Mode:', ANSI.ACCENT)} "
               f"{'pure (lean, no plugins)' if pure else 'full context'} [{pure_why}]")
+        tier_line = f"{color('Tier:', ANSI.ACCENT)} {node.tier}"
+        if node.tier_note:
+            tier_line += f" ({node.tier_note})"
+        print(tier_line)
 
     dag = orch.decompose(prompt, [{"task_id": task_id, "prompt": prompt}])
-    dag = orch.run(dag, task_type=task_type, session_id=session_id, pure=pure)
+    dag = orch.run(dag, task_type=task_type, session_id=session_id, pure=pure,
+                   tier=args.tier)
     node = dag.nodes[task_id]
 
     usage = getattr(node, "usage", None) or {}
@@ -489,6 +494,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         "text": node.result or "",
         "session_id": getattr(node, "session_id", None),
         "usage": usage,
+        "tier": node.tier,
+        "tier_note": node.tier_note,
         "ledger": str(ctx.ledger_path),
     }
     if node.state.name != "SUCCEEDED":
@@ -649,6 +656,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Lean dispatch: no external plugins (simple Q&A)")
     p.add_argument("--no-pure", dest="pure", action="store_false",
                    help="Force full context even for short prompts")
+    p.add_argument("--tier", choices=["free", "frontier"], default=None,
+                   help="Dispatch tier (default: auto by prompt complexity; J5_TIER env also works)")
 
     # tui (explicit; bare `j5` also lands here)
     sub.add_parser("tui", parents=[json_sub], help="Open the interactive terminal UI")

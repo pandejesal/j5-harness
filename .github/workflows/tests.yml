@@ -49,7 +49,68 @@ jobs:
           tools/harness/test_cli_boundaries.py
           tools/skills/ecosystem/contract_test.py
           tools/router/test_cli_gateway.py
+          tools/router/test_http_gateway.py
+          tools/router/test_feedback_reputation.py
+          tools/quant/test_paper.py
           -q --tb=short
 
       # tools/harness/test_bridge_hardening.py is intentionally NOT run:
       # it needs the live agy backend (gate: J5_LIVE=1).
+
+  pytest-ubuntu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test deps
+        run: pip install pytest
+
+      # Linux paths differ, so generate a platform-native config and point
+      # J5_CONFIG at it (load_config honors explicit path > J5_CONFIG env).
+      - name: Generate Linux test config
+        run: |
+          mkdir -p "$RUNNER_TEMP/j5dirs/wsb/.harness" "$RUNNER_TEMP/j5dirs/burg/.harness"
+          mkdir -p "$RUNNER_TEMP/j5dirs/kilo/inbox" "$RUNNER_TEMP/j5dirs/kilo/bus"
+          python - "$RUNNER_TEMP" <<'EOF'
+          import json, os, sys
+          base = os.path.join(sys.argv[1], "j5dirs")
+          cfg = {
+            "defaults": {"serializeSolo": True, "maxParallel": 2},
+            "projects": {"wsb-alpha": {"enabled": True},
+                         "burgonomics": {"enabled": True}},
+            "dirs": {"wsb-alpha": os.path.join(base, "wsb"),
+                     "burgonomics": os.path.join(base, "burg")},
+            "fallbackLadders": {
+              "coder": ["mimo-v2.5-free", "nemotron-3-ultra-free"],
+              "planner": ["nemotron-3-ultra-free", "mimo-v2.5-free"],
+              "bulk": ["mimo-v2.5-free", "nemotron-3-ultra-free"]},
+            "context": {"target_tokens": 4000},
+            "kilo": {"inbox": os.path.join(base, "kilo", "inbox"),
+                     "interharness": os.path.join(base, "kilo", "bus"),
+                     "bridge_path": os.path.join(base, "fake_bridge.py"),
+                     "print_timeout": 10},
+          }
+          out = os.path.join(base, "reliability.config.json")
+          json.dump(cfg, open(out, "w"))
+          print("wrote", out)
+          EOF
+          echo "J5_CONFIG=$RUNNER_TEMP/j5dirs/reliability.config.json" >> $GITHUB_ENV
+
+      - name: Run test suite (live backends excluded)
+        run: >
+          python -m pytest
+          tools/domains/test_domains.py
+          tools/harness/test_integration_contracts.py
+          tools/harness/test_e2e_integration.py
+          tools/harness/test_cli_boundaries.py
+          tools/skills/ecosystem/contract_test.py
+          tools/router/test_cli_gateway.py
+          tools/router/test_http_gateway.py
+          tools/router/test_feedback_reputation.py
+          tools/quant/test_paper.py
+          -q --tb=short

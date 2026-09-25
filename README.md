@@ -3,7 +3,8 @@
 ![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-green)
 ![platform](https://img.shields.io/badge/platform-Windows%20%2F%20PowerShell-lightgrey)
-![tests](https://img.shields.io/badge/tests-226%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-231%20passing-brightgreen)
+![beta](https://img.shields.io/badge/status-public_beta-orange)
 
 > **One command center for all your projects.** See everything, delegate anything —
 > small tasks go straight to a worker, big tasks fan out across a fleet, and every
@@ -145,7 +146,7 @@ OpenCode-compatible runner:
 
 ## Tests
 
-226 tests green, plus 3 live-backend tests that skip by default:
+231 tests green, plus 3 live-backend tests that skip by default:
 
 ```powershell
 python -m pytest tools/domains/test_domains.py tools/harness/test_integration_contracts.py `
