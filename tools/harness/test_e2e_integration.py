@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -202,7 +203,11 @@ class TestRouterDelegationIntegration(unittest.TestCase):
         router_fn = make_router_fn(self.ctx, self.shared, self.config)
         orchestrator = Orchestrator(ledger=ledger, router_fn=router_fn)
 
-        leaves = [("task-1", "Simple coding task")]
+        # Unique prompt per run: a fixed prompt would hit the persistent
+        # L2 cache and mask real dispatch (returning a stale model without
+        # ever evaluating quarantine/retry gates).
+        prompt = f"Simple coding task {uuid.uuid4().hex[:8]}"
+        leaves = [("task-1", prompt)]
         dag = orchestrator.decompose("Build something", leaves)
 
         # Mock the gateway adapter to avoid real network calls

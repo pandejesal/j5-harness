@@ -170,6 +170,17 @@ class HealthTracker:
             h = self._ensure(model_id)
             h.quarantined_until = time.time() + (ttl_s if ttl_s is not None else self.quarantine_ttl_s)
 
+    def release(self, model_id: str) -> None:
+        """Clear quarantine + retry-after gates (test cleanup / manual reset).
+
+        Consecutive-failure history is kept — release re-admits the model
+        to dispatch without erasing its earned record.
+        """
+        with self._lock:
+            h = self._ensure(model_id)
+            h.quarantined_until = None
+            h.retry_after_until = None
+
     def is_quarantined(self, model_id: str, now: float | None = None) -> bool:
         now = now if now is not None else time.time()
         with self._lock:

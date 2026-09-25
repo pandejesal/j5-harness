@@ -400,8 +400,10 @@ class MakeRouterFnTest(unittest.TestCase):
 
     def test_quarantined_model_skipped(self):
         router_fn = make_router_fn(self.ctx, self.shared, self.config)
-        # Quarantine mimo
+        # Quarantine mimo (released in cleanup: global SHARED must not
+        # leak quarantine into later tests in the same process).
         self.shared.tracker.quarantine("mimo-v2.5-free", ttl_s=3600)
+        self.addCleanup(self.shared.tracker.release, "mimo-v2.5-free")
         self.assertTrue(self.shared.tracker.is_quarantined("mimo-v2.5-free"))
 
         self.shared.adapter.send = MagicMock(return_value={"output": "response"})
@@ -411,8 +413,9 @@ class MakeRouterFnTest(unittest.TestCase):
 
     def test_retry_after_model_skipped(self):
         router_fn = make_router_fn(self.ctx, self.shared, self.config)
-        # Set retry-after
+        # Set retry-after (released in cleanup — see above).
         self.shared.tracker.record_failure("mimo-v2.5-free", status_code=429, retry_after_s=60)
+        self.addCleanup(self.shared.tracker.release, "mimo-v2.5-free")
         self.assertTrue(self.shared.tracker.in_retry_after("mimo-v2.5-free"))
 
         self.shared.adapter.send = MagicMock(return_value={"output": "response"})
@@ -428,9 +431,10 @@ class MakeRouterFnTest(unittest.TestCase):
 
     def test_all_models_unavailable_returns_error(self):
         router_fn = make_router_fn(self.ctx, self.shared, self.config)
-        # Quarantine all models
+        # Quarantine all models (released in cleanup — see above).
         for model_id in ["mimo-v2.5-free", "nemotron-3-ultra-free", "ling-3.0-flash-fin-free"]:
             self.shared.tracker.quarantine(model_id, ttl_s=3600)
+            self.addCleanup(self.shared.tracker.release, model_id)
 
         result = router_fn("prompt", task_id="task-8", task_type="coding")
         self.assertEqual(result["confidence"], 0.0)
