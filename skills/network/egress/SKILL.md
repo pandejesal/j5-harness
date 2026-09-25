@@ -1,11 +1,14 @@
 ---
-name: network/egress
-description: >-
-  Egress control for workers: proxied dispatch via HTTP_PROXY env, per-bucket
-  instances, rotate-on-429 procedure, IP verification. Input: proxy URL.
-  Output: workers egressing from rotated IPs.
+namespace = "network"
+name = "egress"
+version = "1.0.0"
+capabilities = ["egress", "proxy", "rotation"]
+trigger_patterns = ["rotate IP", "429", "proxy", "egress IP", "rate limit"]
+applicable_agents = ["coding", "general"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # network/egress
 
 Free-tier buckets are per-IP. When 429s persist, a new egress IP is worth

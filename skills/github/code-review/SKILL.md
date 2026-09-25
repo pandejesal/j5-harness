@@ -1,11 +1,14 @@
 ---
-name: github/code-review
-description: >-
-  End-to-end code review: local diffs, PR checkout, inline comments, formal
-  verdicts via gh (curl fallback). Input: diff_sha or PR number. Output:
-  P0/P1/P2 findings with file:line evidence, then approve/request-changes.
+namespace = "github"
+name = "code-review"
+version = "1.0.0"
+capabilities = ["review", "pr"]
+trigger_patterns = ["review PR", "code review", "inline comments", "approve PR"]
+applicable_agents = ["reviewer", "critic", "coding"]
+dependencies = {}
+contract = { inputs = { target = { type = "str", required = true } }, outputs = { findings = { type = "str" } } }
+self_tests = [{ match = { target = 'smoke' }, not_match = { target = 123 } }]
 ---
-
 # github/code-review
 
 Review local changes pre-push or open PRs, and post the verdict back to

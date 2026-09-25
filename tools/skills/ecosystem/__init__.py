@@ -145,6 +145,8 @@ class SkillMeta:
     name: str
     version: Version
     capabilities: tuple[str, ...] = ()
+    trigger_patterns: tuple[str, ...] = ()
+    applicable_agents: tuple[str, ...] = ()
     dependencies: dict[str, VersionRange] = field(default_factory=dict)
     contract: Contract = field(default_factory=Contract)
     self_tests: tuple[dict, ...] = ()
@@ -157,6 +159,8 @@ class SkillMeta:
         if not self.namespace or not self.name:
             raise ValueError("namespace and name must be non-empty")
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
+        object.__setattr__(self, "trigger_patterns", tuple(self.trigger_patterns))
+        object.__setattr__(self, "applicable_agents", tuple(self.applicable_agents))
         object.__setattr__(self, "self_tests", tuple(self.self_tests))
         object.__setattr__(self, "dependencies", dict(self.dependencies))
 

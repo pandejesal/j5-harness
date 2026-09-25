@@ -1,10 +1,14 @@
 ---
-name: quant/filters
-description: >-
-  Signal conditioning: Kalman smoothing, Hurst regime test, Bayesian model
-  averaging across strategies. Input: prices/signals. Output: filtered signal.
+namespace = "quant"
+name = "filters"
+version = "1.0.0"
+capabilities = ["denoise", "blend"]
+trigger_patterns = ["kalman", "hurst", "smooth signal", "ensemble weight", "bayesian"]
+applicable_agents = ["strategy-designer", "quant"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # quant/filters
 
 Raw price lies; raw signals overtrade. Three conditioners, composed in order:

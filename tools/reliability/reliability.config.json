@@ -42,6 +42,9 @@
     "errRate20pct": true,
     "cooldownMin": 15
   },
+  "skills": {
+    "bundled": "skills"
+  },
   "kilo": {
     "inbox": "C:\\Users\\DELL\\Documents\\Default Project\\WSB-Alpha-System-build\\.kilo\\inbox",
     "interharness": "C:\\Users\\DELL\\Documents\\Default Project\\WSB-Alpha-System-build\\InterHarness",

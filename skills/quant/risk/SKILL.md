@@ -1,10 +1,14 @@
 ---
-name: quant/risk
-description: >-
-  Volatility forecasting (GARCH) + Kelly position sizing with guardrails.
-  Input: returns, win rate, payoff. Output: size fraction, TP/SL multipliers.
+namespace = "quant"
+name = "risk"
+version = "1.0.0"
+capabilities = ["sizing", "volatility"]
+trigger_patterns = ["position size", "kelly", "garch", "volatility forecast", "risk"]
+applicable_agents = ["risk-manager", "quant"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # quant/risk
 
 Forecast how wild tomorrow is, then bet a fraction of what the math allows —

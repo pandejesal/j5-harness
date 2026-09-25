@@ -1,10 +1,14 @@
 ---
-name: github/auth
-description: >-
-  GitHub authentication for agents: detection flow, PAT/SSH/gh login,
-  headless setup, troubleshooting. Input: nothing. Output: working auth.
+namespace = "github"
+name = "auth"
+version = "1.0.0"
+capabilities = ["auth", "credentials"]
+trigger_patterns = ["github auth", "gh login", "token setup", "permission denied"]
+applicable_agents = ["coding", "general"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # github/auth
 
 No auth, no GitHub. Run the detection flow FIRST on any machine before

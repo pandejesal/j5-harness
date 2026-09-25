@@ -1,10 +1,14 @@
 ---
-name: quant/fusion
-description: >-
-  Multi-model decision pipeline: warmup, HTF bias, analyze, Kelly-adjusted
-  exits, outcome recording. Input: OHLCV. Output: gated trade decision.
+namespace = "quant"
+name = "fusion"
+version = "1.0.0"
+capabilities = ["decision-fusion"]
+trigger_patterns = ["fuse signals", "confidence vote", "trade decision"]
+applicable_agents = ["strategy-designer", "risk-manager", "quant"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # quant/fusion
 
 One engine that composes the other quant skills into a single gated decision:

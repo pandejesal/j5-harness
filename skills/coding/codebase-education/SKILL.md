@@ -1,11 +1,14 @@
 ---
-name: coding/codebase-education
-description: >-
-  Socratic codebase tutor: survey, architecture, module walkthrough, math,
-  security — user talks first, agent refines. Input: repo path. Output:
-  shared understanding + gap list.
+namespace = "coding"
+name = "codebase-education"
+version = "1.0.0"
+capabilities = ["tutor", "onboarding"]
+trigger_patterns = ["teach me", "explain codebase", "walk me through", "onboard"]
+applicable_agents = ["coding", "general"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # coding/codebase-education
 
 A lecture is forgotten; a questioned engineer remembers. This skill turns any

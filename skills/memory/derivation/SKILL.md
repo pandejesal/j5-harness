@@ -1,12 +1,14 @@
 ---
-name: memory/derivation
-description: >-
-  Turn episodes into durable knowledge: cursor-driven batch derivation,
-  noise filtering, tool-call application, reputation, pruning, and
-  copy-first migration discipline. Input: unprocessed episodes. Output:
-  typed memories + audit trail.
+namespace = "memory"
+name = "derivation"
+version = "1.0.0"
+capabilities = ["harvest", "migrate"]
+trigger_patterns = ["harvest session", "derive knowledge", "backfill memory", "migrate memory"]
+applicable_agents = ["planner", "general"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # memory/derivation
 
 Derivation is how raw session episodes become knowledge you can trust. The

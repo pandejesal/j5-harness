@@ -1,12 +1,14 @@
-﻿---
-name: review-checklist
-description: >-
-  Structured code-review checklist that enforces path:line findings with check-ids
-  and severity levels. Input: diff_sha. Output: P0/P1/P2 findings, each MUST be
-  path:line + 1-line quote + check-id + severity. Bare LGTM is forbidden.
-  Verifier identity and diff binding required on every finding line.
 ---
-
+namespace = "core"
+name = "review-checklist"
+version = "1.0.0"
+capabilities = ["review", "gates"]
+trigger_patterns = ["review checklist", "P0", "audit diff"]
+applicable_agents = ["reviewer", "critic"]
+dependencies = {}
+contract = { inputs = { target = { type = "str", required = true } }, outputs = { findings = { type = "str" } } }
+self_tests = [{ match = { target = 'smoke' }, not_match = { target = 123 } }]
+---
 # review-checklist
 
 Structured code-review skill that produces machine-parseable findings from a diff.

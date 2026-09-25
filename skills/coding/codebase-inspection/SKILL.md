@@ -1,11 +1,14 @@
 ---
-name: coding/codebase-inspection
-description: >-
-  Structured codebase audit: identity, structure, LOC, key files, deps,
-  git health, quality, report. Input: repo path. Output: strengths/concerns
-  review with numbers.
+namespace = "coding"
+name = "codebase-inspection"
+version = "1.0.0"
+capabilities = ["audit", "metrics"]
+trigger_patterns = ["review codebase", "analyze repo", "how big is", "tech debt audit"]
+applicable_agents = ["reviewer", "planner", "coding"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # coding/codebase-inspection
 
 Eight passes, one report. Quantitative backbone (pygount) plus key-file

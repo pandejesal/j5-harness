@@ -1,10 +1,14 @@
 ---
-name: github/project-publishing
-description: >-
-  Publish local projects: survey, worthiness triage, clean, README, create,
-  push, profile. Input: projects directory. Output: live public repos.
+namespace = "github"
+name = "project-publishing"
+version = "1.0.0"
+capabilities = ["publishing", "portfolio"]
+trigger_patterns = ["publish project", "repo worthiness", "profile readme", "portfolio"]
+applicable_agents = ["coding", "general"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # github/project-publishing
 
 Turn a folder of projects into a portfolio. Survey everything, publish what

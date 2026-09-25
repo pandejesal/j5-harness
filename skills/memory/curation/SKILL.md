@@ -1,11 +1,14 @@
 ---
-name: memory/curation
-description: >-
-  Memory lifecycle: hot/cold tiers, typed stores, derive-curate-verify loop,
-  write-constrained maintenance. Input: session episodes. Output: curated
-  durable knowledge with audit trail.
+namespace = "memory"
+name = "curation"
+version = "1.0.0"
+capabilities = ["lifecycle", "dedup"]
+trigger_patterns = ["consolidate memory", "dedup knowledge", "archive lesson", "curate"]
+applicable_agents = ["planner", "general"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # memory/curation
 
 Memories rot, duplicate, and contradict unless curated. This skill defines the

@@ -1,10 +1,14 @@
 ---
-name: github/repo-management
-description: >-
-  Repository lifecycle: clone/create/fork, pre-publish hygiene gate, remotes,
-  secrets sweep. Input: local dir or repo URL. Output: clean, publishable repo.
+namespace = "github"
+name = "repo-management"
+version = "1.0.0"
+capabilities = ["repos", "hygiene"]
+trigger_patterns = ["create repo", "pre-publish", "clone repo", "hygiene gate"]
+applicable_agents = ["coding", "general"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # github/repo-management
 
 Repos are created once and regretted forever unless gated. This skill is the

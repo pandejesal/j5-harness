@@ -1,10 +1,14 @@
 ---
-name: quant/backtesting
-description: >-
-  Event-loop backtest discipline: ATR exit ladder, confidence voting, metrics.
-  Input: OHLCV + signal fn. Output: trades with WR/PnL/R:R/exit breakdown.
+namespace = "quant"
+name = "backtesting"
+version = "1.0.0"
+capabilities = ["backtest", "validation"]
+trigger_patterns = ["backtest", "walk-forward", "strategy validation", "trade simulation"]
+applicable_agents = ["strategy-designer", "e2e-runner", "quant"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # quant/backtesting
 
 How to run an honest backtest. Structure, exit ladder, and metrics below are

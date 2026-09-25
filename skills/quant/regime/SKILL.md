@@ -1,10 +1,14 @@
 ---
-name: quant/regime
-description: >-
-  Market-regime detection: HMM detector API + higher-timeframe bias.
-  Input: log returns. Output: regime id, label, profile, TP/SL multipliers.
+namespace = "quant"
+name = "regime"
+version = "1.0.0"
+capabilities = ["regime-detection"]
+trigger_patterns = ["regime", "market state", "trend vs chop", "hmm"]
+applicable_agents = ["strategy-designer", "risk-manager", "quant"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # quant/regime
 
 Trade WITH the regime, size AGAINST uncertainty. Two tools: a 4-state HMM

@@ -1,10 +1,14 @@
 ---
-name: quant/indicators
-description: >-
-  NumPy ATR/RSI/ADX reference implementations for market data features.
-  Input: OHLC arrays. Output: indicator series. Pure numpy/pandas, no network.
+namespace = "quant"
+name = "indicators"
+version = "1.0.0"
+capabilities = ["features", "signals"]
+trigger_patterns = ["atr", "rsi", "adx", "indicator", "feature engineering"]
+applicable_agents = ["strategy-designer", "quant"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # quant/indicators
 
 Reference indicator implementations. Copy-adapt, don't re-derive — these exact

@@ -1,12 +1,14 @@
-﻿---
-name: test-plan
-description: >-
-  Generate a requirement-to-test matrix from a spec delta and code diff.
-  Input: spec section + diff_sha. Output: requirement -> test_cmd -> expected -> actual
-  matrix. Mandates 1 negative + 1 boundary case per changed contract.
-  All test commands must be executable and self-contained.
 ---
-
+namespace = "core"
+name = "test-plan"
+version = "1.0.0"
+capabilities = ["testing", "coverage"]
+trigger_patterns = ["test plan", "test matrix", "coverage"]
+applicable_agents = ["reviewer", "e2e-runner", "coding"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
+---
 # test-plan
 
 Produces a structured test plan that maps every changed contract to concrete,

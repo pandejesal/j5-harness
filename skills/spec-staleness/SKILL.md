@@ -1,11 +1,14 @@
-﻿---
-name: spec-staleness
-description: >-
-  Detect spec-to-code drift by comparing a spec document against a code diff.
-  Input: spec_path + diff_sha. Output: STALE or OK per section with
-  spec-path:line vs code-path:line mapping. STALE verdict blocks DONE.
 ---
-
+namespace = "core"
+name = "spec-staleness"
+version = "1.0.0"
+capabilities = ["drift"]
+trigger_patterns = ["spec drift", "stale spec", "spec vs code"]
+applicable_agents = ["reviewer", "critic", "planner"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
+---
 # spec-staleness
 
 Audits whether specification sections are still consistent with the actual code

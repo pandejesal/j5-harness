@@ -268,11 +268,18 @@ def role_chain_for(config: dict[str, Any], role: str) -> list[str]:
 
 
 def _skill_roots(config: dict[str, Any], proj_dir: Path) -> list[Path]:
-    """Project skill root plus any configured bundled root (spec 3.6)."""
+    """Project skill root plus any configured bundled root (spec 3.6).
+
+    A relative bundled path resolves against the repo root, so the config
+    stays portable across machines and OSs.
+    """
     roots = [proj_dir / ".harness" / "skills"]
     bundled = config.get("skills", {}).get("bundled")
     if bundled:
-        roots.append(Path(bundled))
+        bundled_path = Path(bundled)
+        if not bundled_path.is_absolute():
+            bundled_path = Path(__file__).resolve().parent.parent.parent / bundled_path
+        roots.append(bundled_path)
     return roots
 
 

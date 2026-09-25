@@ -1,11 +1,14 @@
 ---
-name: github/issues
-description: >-
-  GitHub issue lifecycle: list, triage, create with templates, label,
-  assign, comment, close. Input: issue number or report. Output: updated
-  issue state.
+namespace = "github"
+name = "issues"
+version = "1.0.0"
+capabilities = ["issues", "triage"]
+trigger_patterns = ["file issue", "triage", "bug report", "github issue"]
+applicable_agents = ["coding", "planner"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # github/issues
 
 Issues are the intake queue. List → triage → create well-formed → label →

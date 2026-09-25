@@ -1,10 +1,14 @@
 ---
-name: github/pr-workflow
-description: >-
-  Full PR lifecycle: branch, commit, open, watch CI, auto-fix failures, merge.
-  Input: change description + base branch. Output: merged PR URL or blocked state.
+namespace = "github"
+name = "pr-workflow"
+version = "1.0.0"
+capabilities = ["pr-lifecycle", "ci"]
+trigger_patterns = ["open PR", "create pull request", "CI status", "merge PR"]
+applicable_agents = ["coding", "reviewer"]
+dependencies = {}
+contract = { inputs = { task = { type = "str", required = true } }, outputs = { guidance = { type = "str" } } }
+self_tests = [{ match = { task = 'smoke' }, not_match = { task = 123 } }]
 ---
-
 # github/pr-workflow
 
 Branch → commit → push → PR → CI green → merge. `gh` first, REST fallback.
