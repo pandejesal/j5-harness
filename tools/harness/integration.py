@@ -478,6 +478,17 @@ def make_router_fn(
                     latency_ms=latency_ms,
                 )
                 breaker.record_failure()
+                # Reputation feedback: failures now move the EMA (previously
+                # only successes were recorded, so failing models kept their
+                # rank). A 3+ consecutive-failure streak counts as a doom
+                # loop and halves the score (see feedback_loop).
+                try:
+                    streak = (shared.tracker.snapshot().get(candidate, {})
+                              .get("consecutive_failures", 0))
+                except Exception:  # noqa: BLE001 - health read must never break dispatch
+                    streak = 0
+                shared.feedback.record(candidate, latency_ms, completeness=0.0,
+                                       accuracy=0.0, doom_loop=streak >= 3)
                 continue  # next chain entry may still be available
             latency_ms = (time.monotonic() - start) * 1000.0
             shared.tracker.record_success(candidate, latency_ms)

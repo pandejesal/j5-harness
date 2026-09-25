@@ -24,12 +24,24 @@ def _default_feedback_path() -> Path:
     return Path(__file__).resolve().parent / FEEDBACK_FILENAME
 
 
-def score_response(latency_ms: float, completeness: float, accuracy: float) -> float:
-    """Blend latency/completeness/accuracy into a [0, 1] score."""
+def score_response(latency_ms: float, completeness: float, accuracy: float,
+                   doom_loop: bool = False, correction: bool = False) -> float:
+    """Blend latency/completeness/accuracy into a [0, 1] score.
+
+    Reputation signals (adapted from evsmem's per-agent evaluation): a model
+    stuck in a repeated-failure cycle (doom_loop) loses half its score; one
+    whose output needed human correction loses a flat 0.15. Both default
+    off, so existing callers are unaffected.
+    """
     comp = min(max(completeness, 0.0), 1.0)
     acc = min(max(accuracy, 0.0), 1.0)
     lat_score = max(0.0, 1.0 - max(0.0, latency_ms) / LATENCY_NORM_MS)
-    return round(0.4 * lat_score + 0.3 * comp + 0.3 * acc, 4)
+    score = round(0.4 * lat_score + 0.3 * comp + 0.3 * acc, 4)
+    if doom_loop:
+        score = round(score * 0.5, 4)
+    if correction:
+        score = round(max(0.0, score - 0.15), 4)
+    return score
 
 
 @dataclass
@@ -77,8 +89,11 @@ class FeedbackLoop:
         latency_ms: float,
         completeness: float,
         accuracy: float,
+        doom_loop: bool = False,
+        correction: bool = False,
     ) -> dict:
-        score = score_response(latency_ms, completeness, accuracy)
+        score = score_response(latency_ms, completeness, accuracy,
+                               doom_loop=doom_loop, correction=correction)
         now = time.time()
         with self._lock:
             s = self._ensure(model_id)
@@ -91,7 +106,8 @@ class FeedbackLoop:
             recent.append(score)
             s.degrading = self._trend_degrading(list(recent))
             snapshot = {"model": model_id, "score": score, "ema": s.ema,
-                        "count": s.count, "degrading": s.degrading}
+                        "count": s.count, "degrading": s.degrading,
+                        "doom_loop": doom_loop, "correction": correction}
         self._append_history({"ts": now, **snapshot, "latency_ms": latency_ms,
                               "completeness": completeness, "accuracy": accuracy})
         return snapshot
