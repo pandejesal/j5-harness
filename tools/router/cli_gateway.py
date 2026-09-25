@@ -220,6 +220,7 @@ class OpencodeCliAdapter(GatewayInterface):
         provider_prefix: str = DEFAULT_PROVIDER_PREFIX,
         extra_args: list[str] | None = None,
         pure: bool | None = None,
+        proxy_url: str | None = None,
     ) -> None:
         resolved = binary or find_opencode_binary()
         if not resolved:
@@ -238,6 +239,10 @@ class OpencodeCliAdapter(GatewayInterface):
         # simple Q&A. Default full context preserved for coding tasks.
         # J5_PURE=1 sets the process default; per-call `pure=` overrides it.
         self.pure, _ = resolve_pure(pure)
+        # Proxied egress (see skills/network/egress): injected into the
+        # worker subprocess env so dispatch can rotate IPs on 429-storms.
+        # Opt-in only — default is direct egress.
+        self.proxy_url = proxy_url or os.environ.get("J5_PROXY", "").strip() or None
         self._lock = threading.Lock()
         self._alock = asyncio.Lock()
         self._in_flight = 0
@@ -380,6 +385,13 @@ class OpencodeCliAdapter(GatewayInterface):
             "PYTHONUTF8": "1",
             "NO_COLOR": "1",
         }
+        if self.proxy_url:
+            env.update({
+                "HTTP_PROXY": self.proxy_url,
+                "HTTPS_PROXY": self.proxy_url,
+                "http_proxy": self.proxy_url,
+                "https_proxy": self.proxy_url,
+            })
         try:
             # stdin=DEVNULL: headless dispatch must NEVER block on an
             # interactive permission prompt. A denied tool becomes a

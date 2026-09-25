@@ -409,5 +409,34 @@ class PureForwardingTest(unittest.TestCase):
         self.assertTrue(kwargs.get("pure"))
 
 
+class ProxyEnvTest(unittest.TestCase):
+    def test_proxy_env_injected(self):
+        adapter = OpencodeCliAdapter(binary="C:/fake/opencode.exe", workdir="C:/fake/wd",
+                                     proxy_url="http://127.0.0.1:8081")
+        fake = FakePopen(_json_stream(["ok"]).splitlines(keepends=True))
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake) as m:
+            with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
+                adapter.send("mimo-v2.5-free", "hi")
+        env = m.call_args[1]["env"]
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+            self.assertEqual(env[key], "http://127.0.0.1:8081")
+
+    def test_no_proxy_by_default(self):
+        with patch.dict("os.environ", {}, clear=True):
+            adapter = OpencodeCliAdapter(binary="C:/fake/opencode.exe", workdir="C:/fake/wd")
+        self.assertIsNone(adapter.proxy_url)
+        fake = FakePopen(_json_stream(["ok"]).splitlines(keepends=True))
+        with patch("tools.router.cli_gateway.subprocess.Popen", return_value=fake) as m:
+            with patch("tools.router.cli_gateway.Path.is_dir", return_value=True):
+                adapter.send("mimo-v2.5-free", "hi")
+        env = m.call_args[1]["env"]
+        self.assertNotIn("HTTP_PROXY", env)
+
+    def test_j5_proxy_env_default(self):
+        with patch.dict("os.environ", {"J5_PROXY": "http://127.0.0.1:8082"}):
+            adapter = OpencodeCliAdapter(binary="C:/fake/opencode.exe", workdir="C:/fake/wd")
+        self.assertEqual(adapter.proxy_url, "http://127.0.0.1:8082")
+
+
 if __name__ == "__main__":
     unittest.main()
