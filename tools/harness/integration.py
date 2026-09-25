@@ -42,7 +42,12 @@ from tools.router.fallback_chain import FallbackChainBuilder
 from tools.router.feedback_loop import FeedbackLoop
 from tools.router.free_model_router import FreeModelRouter
 from tools.router.cli_gateway import resolve_pure
-from tools.router.gateway_adapters import GatewayError, GatewayInterface, ZenGatewayAdapter
+from tools.router.gateway_adapters import (
+    FallbackGateway,
+    GatewayError,
+    GatewayInterface,
+    ZenGatewayAdapter,
+)
 from tools.router.health_probe import HealthTracker
 from tools.router.model_registry import MODELS, default_chain
 from tools.skills.ecosystem.skill_hub import SkillHub
@@ -145,24 +150,45 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
 def build_gateway(max_in_flight: int = 1) -> GatewayInterface:
     """Select the dispatch backend.
 
-    ``J5_GATEWAY`` env override: ``cli`` forces real CLI dispatch,
-    ``zen`` forces the HTTP adapter, ``auto`` (default) uses real CLI
-    dispatch when an opencode binary is found and falls back to Zen HTTP
-    otherwise. Auto mode is what makes `j5 run` prompts actually execute.
+    ``J5_GATEWAY`` env override: ``cli`` forces real CLI dispatch, ``http``
+    forces direct HTTP dispatch (provider from ``J5_HTTP_PROVIDER``, default
+    ``zen``), ``zen`` forces the legacy HTTP adapter. ``auto`` (default)
+    builds CLI primary + direct-HTTP standby: if the opencode binary is
+    missing or dies mid-run, dispatch continues over HTTP with no caller
+    changes. Auto mode is what makes `j5 run` prompts actually execute —
+    and keeps executing when parts break.
     """
     from tools.router.cli_gateway import OpencodeCliAdapter, find_opencode_binary
+    from tools.router.http_gateway import HttpGatewayAdapter
+
+    def _http() -> GatewayInterface:
+        return HttpGatewayAdapter(
+            provider=os.environ.get("J5_HTTP_PROVIDER", "zen"),
+            max_in_flight=max_in_flight,
+        )
 
     mode = os.environ.get("J5_GATEWAY", "auto").strip().lower()
     if mode == "zen":
         return ZenGatewayAdapter(max_in_flight=max_in_flight)
     if mode == "cli":
         return OpencodeCliAdapter(max_in_flight=max_in_flight)
+    if mode == "http":
+        return _http()
+    chain: list[GatewayInterface] = []
     if find_opencode_binary():
         try:
-            return OpencodeCliAdapter(max_in_flight=max_in_flight)
+            chain.append(OpencodeCliAdapter(max_in_flight=max_in_flight))
         except ValueError:
             pass
-    return ZenGatewayAdapter(max_in_flight=max_in_flight)
+    try:
+        chain.append(_http())
+    except ValueError:
+        pass  # e.g. keyed provider configured without its key
+    if not chain:
+        return ZenGatewayAdapter(max_in_flight=max_in_flight)
+    if len(chain) == 1:
+        return chain[0]
+    return FallbackGateway(chain)
 
 
 def build_shared() -> SharedState:

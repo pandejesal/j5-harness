@@ -3,7 +3,7 @@
 ![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)
 ![python](https://img.shields.io/badge/python-3.12%2B-green)
 ![platform](https://img.shields.io/badge/platform-Windows%20%2F%20PowerShell-lightgrey)
-![tests](https://img.shields.io/badge/tests-187%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-226%20passing-brightgreen)
 
 > **One command center for all your projects.** See everything, delegate anything —
 > small tasks go straight to a worker, big tasks fan out across a fleet, and every
@@ -73,6 +73,13 @@ j5 --readonly status             # allowed (read-only)
 j5 --readonly run --prompt "x"   # refused
 j5 capabilities                  # the per-command map (JSON with --json)
 
+# providers: free-tier default, no keys needed. Others bring their own:
+#   J5_OPENROUTER_API_KEY / J5_OPENAI_API_KEY (env only, never in files)
+#   J5_HTTP_PROVIDER=openrouter   # direct-HTTP dispatch provider
+#   J5_GATEWAY=auto               # auto = CLI primary + HTTP standby
+#                                 # (survives opencode dying); cli|http|zen force one
+# antigravity models stay CLI-routed: run `opencode auth login` once
+
 # desktop command center (no console window, logs to j5_desktop\*.log)
 powershell -ExecutionPolicy Bypass -File j5_desktop\launch-modern.ps1
 ```
@@ -138,7 +145,7 @@ OpenCode-compatible runner:
 
 ## Tests
 
-187 tests green, plus 3 live-backend tests that skip by default:
+226 tests green, plus 3 live-backend tests that skip by default:
 
 ```powershell
 python -m pytest tools/domains/test_domains.py tools/harness/test_integration_contracts.py `

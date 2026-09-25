@@ -141,3 +141,28 @@ class ZenGatewayAdapter(GatewayInterface):
             finally:
                 with self._lock:
                     self._in_flight -= 1
+
+
+class FallbackGateway(GatewayInterface):
+    """Try gateways in order; first success wins; last error raises.
+
+    This is the independence layer: CLI primary with direct-HTTP standby
+    means J5 keeps dispatching when the opencode binary is missing,
+    broken, or hung (each wrapped gateway still serializes itself).
+    A single-element chain behaves exactly like that gateway.
+    """
+
+    def __init__(self, gateways: list[GatewayInterface]) -> None:
+        if not gateways:
+            raise ValueError("FallbackGateway needs at least one gateway")
+        self.gateways = list(gateways)
+
+    async def asend(self, model: str, prompt: str) -> dict:
+        last: GatewayError | None = None
+        for gateway in self.gateways:
+            try:
+                return await gateway.asend(model, prompt)
+            except GatewayError as exc:
+                last = exc
+                continue
+        raise last or GatewayError("all gateways failed")

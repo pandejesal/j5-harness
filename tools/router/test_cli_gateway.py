@@ -282,20 +282,34 @@ class BuildGatewayTest(unittest.TestCase):
             gw = build_gateway()
         self.assertIsInstance(gw, OpencodeCliAdapter)
 
-    def test_auto_prefers_cli_when_present(self):
+    def test_auto_prefers_cli_with_http_standby(self):
         from tools.harness.integration import build_gateway
+        from tools.router.gateway_adapters import FallbackGateway
 
         with patch.dict("os.environ", {"J5_GATEWAY": "auto"}), \
              patch("tools.router.cli_gateway.find_opencode_binary",
                    return_value="C:/fake/opencode.exe"):
             gw = build_gateway()
-        self.assertIsInstance(gw, OpencodeCliAdapter)
+        self.assertIsInstance(gw, FallbackGateway)
+        self.assertIsInstance(gw.gateways[0], OpencodeCliAdapter)
+        self.assertEqual(len(gw.gateways), 2)
 
-    def test_auto_falls_back_to_zen(self):
+    def test_auto_without_cli_uses_direct_http(self):
+        from tools.harness.integration import build_gateway
+        from tools.router.http_gateway import HttpGatewayAdapter
+
+        with patch.dict("os.environ", {"J5_GATEWAY": "auto"}), \
+             patch("tools.router.cli_gateway.find_opencode_binary", return_value=None):
+            gw = build_gateway()
+        self.assertIsInstance(gw, HttpGatewayAdapter)
+        self.assertEqual(gw.provider, "zen")
+
+    def test_auto_unknown_provider_falls_back_to_legacy_zen(self):
         from tools.harness.integration import build_gateway
         from tools.router.gateway_adapters import ZenGatewayAdapter
 
-        with patch.dict("os.environ", {"J5_GATEWAY": "auto"}), \
+        with patch.dict("os.environ", {"J5_GATEWAY": "auto",
+                                       "J5_HTTP_PROVIDER": "wat"}), \
              patch("tools.router.cli_gateway.find_opencode_binary", return_value=None):
             gw = build_gateway()
         self.assertIsInstance(gw, ZenGatewayAdapter)
