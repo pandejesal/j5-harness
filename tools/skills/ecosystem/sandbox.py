@@ -17,6 +17,7 @@ import builtins
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -85,6 +86,14 @@ def reject_reasons(path: str) -> str | None:
         return "UNC path rejected"
     if path.startswith("\\\\?\\") or path.startswith("\\\\.\\"):
         return "device path rejected"
+    if os.name != "nt" and re.match(r"^[A-Za-z]:([\\/]|$)", path):
+        # Per-OS rule: on POSIX hosts a Windows drive-letter path is a
+        # single opaque filename component that can never resolve inside a
+        # POSIX allowlist — it only ever shows up in escape attempts
+        # (absolute-system paths, ADS payloads, trailing dot/space tricks).
+        # On Windows itself this rule is skipped: legitimate absolute paths
+        # need the allowlist check below, which already denies outsiders.
+        return "Windows absolute path rejected outside Windows"
     # ADS: a colon anywhere except the drive-letter position.
     if ":" in path and (len(path) < 2 or path[1] != ":"):
         return "ADS/colon path rejected"

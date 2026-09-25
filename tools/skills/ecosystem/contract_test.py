@@ -9,6 +9,7 @@ share no mutable state (design constraint). Runnable per-file with
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -309,6 +310,30 @@ class EscapeMatrixTest(unittest.TestCase):
             with self.subTest(label=label, attempt=attempt):
                 with self.assertRaises(PermissionError):
                     self.sandbox.check_path(attempt, self.policy, "read")
+
+    def test_windows_shapes_rejected_off_windows(self) -> None:
+        # Per-OS contract: on POSIX hosts, Windows drive-letter shapes can
+        # never be legitimate skill paths, so reject_reasons() refuses them
+        # structurally (absolute-system, ADS payloads, trailing dot/space).
+        # On Windows itself these fall through to the allowlist check
+        # (covered by the matrix test above), so this unit test only runs
+        # off Windows.
+        if os.name == "nt":
+            self.skipTest("Windows host: covered by the allowlist matrix")
+        shapes = [
+            r"C:\Windows\System32\cmd.exe",
+            r"C:\Windows\System32\config\SAM",
+            r"C:\Windows\System32\cmd.exe:stream",
+            r"C:\Windows\System32\cmd.exe::$DATA",
+            r"C:\Windows\System32\cmd.exe ",
+            r"C:\Windows\System32\cmd.exe.",
+            r"C:/Windows/System32/cmd.exe",
+        ]
+        for shape in shapes:
+            with self.subTest(shape=shape):
+                reason = self.sandbox.reject_reasons(shape)
+                self.assertIsNotNone(reason)
+                self.assertIn("Windows", reason)
 
 
 class DagMatrixTest(unittest.TestCase):
