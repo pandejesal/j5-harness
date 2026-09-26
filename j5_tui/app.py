@@ -601,8 +601,14 @@ Compression:
         the ledger either way.
         """
 
-        BINDINGS = [Binding("escape", "show_board", "Board")]
+        BINDINGS = [
+            Binding("escape", "show_board", "Board"),
+            Binding("up", "hist_prev", "History back"),
+            Binding("down", "hist_next", "History forward"),
+            Binding("f1", "show_help", "Help"),
+        ]
         WRAP_WIDTH = 100
+        HISTORY_MAX = 500
 
         def __init__(self) -> None:
             super().__init__()
@@ -611,6 +617,8 @@ Compression:
             self.turn = 0
             self._buf = ""
             self._answer_label = None
+            self.history: list[str] = []
+            self._hist_idx = 0
 
         def compose(self) -> ComposeResult:
             yield Header()
@@ -618,6 +626,7 @@ Compression:
             with ScrollableContainer(id="chat-scroll"):
                 yield Label("Ask J5 anything. Routing, fallback, verification, and ledger happen automatically. "
                             "'a' focuses here from anywhere; Esc shows the dashboard.")
+            yield Label("Ready. Type a task, Enter sends — F1 for keys.", id="chat-status")
             with Horizontal(id="chat-bar"):
                 yield Select([(p, p) for p in projects], value=projects[0], id="chat-project")
                 yield Select([("coding", "coding"), ("research", "research"),
@@ -630,6 +639,7 @@ Compression:
             yield Footer()
 
         def on_mount(self) -> None:
+            self._load_history()
             try:
                 self.query_one("#chat-input", Input).focus()
             except Exception:
@@ -680,6 +690,10 @@ Compression:
             if not prompt:
                 return
             self.query_one("#chat-input", Input).value = ""
+            if not self.history or self.history[-1] != prompt:
+                self.history.append(prompt)
+                self._save_history()
+            self._hist_idx = len(self.history)
             self.busy = True
             self.turn += 1
             self._buf = ""
@@ -730,6 +744,53 @@ Compression:
             except Exception:
                 pass
 
+        def _history_path(self):  # Path import kept local: stdlib only
+            from pathlib import Path
+            return Path.home() / ".j5" / "chat_history.jsonl"
+
+        def _load_history(self) -> None:
+            try:
+                lines = self._history_path().read_text(encoding="utf-8").splitlines()
+                self.history = [json.loads(l) for l in lines if l.strip()][-self.HISTORY_MAX:]
+            except Exception:
+                self.history = []
+            self._hist_idx = len(self.history)
+
+        def _save_history(self) -> None:
+            try:
+                p = self._history_path()
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text("\n".join(json.dumps(h) for h in self.history[-self.HISTORY_MAX:]),
+                             encoding="utf-8")
+            except Exception:
+                pass  # history is a convenience; never break a turn over it
+
+        def _focused_input(self) -> bool:
+            try:
+                w = self.focused
+                return isinstance(w, Input) and w.id == "chat-input"
+            except Exception:
+                return False
+
+        def action_hist_prev(self) -> None:
+            if not self._focused_input() or not self.history:
+                return
+            self._hist_idx = max(0, self._hist_idx - 1)
+            self.query_one("#chat-input", Input).value = self.history[self._hist_idx]
+
+        def action_hist_next(self) -> None:
+            if not self._focused_input() or not self.history:
+                return
+            if self._hist_idx >= len(self.history) - 1:
+                self._hist_idx = len(self.history)
+                self.query_one("#chat-input", Input).value = ""
+            else:
+                self._hist_idx += 1
+                self.query_one("#chat-input", Input).value = self.history[self._hist_idx]
+
+        def action_show_help(self) -> None:
+            self.app.push_screen(ChatHelpScreen())
+
         # -- worker thread (never touch widgets here) --------------------
         def _run_turn(self, project: str, task_type: str, prompt: str, turn: int) -> None:
             emit = self.app.call_from_thread
@@ -756,7 +817,8 @@ Compression:
                 if getattr(node, "session_id", None):
                     self.session_id = node.session_id
                 emit(self._finish, node.state.name, node.model_id or "?",
-                     float(node.confidence or 0.0), str(ctx.ledger_path))
+                     float(node.confidence or 0.0), str(ctx.ledger_path),
+                     getattr(node, "usage", None) or {})
             except Exception as exc:  # noqa: BLE001 - show, never crash the TUI
                 emit(self._add, f"✖ turn failed: {type(exc).__name__}: {str(exc)[:300]}")
             finally:
@@ -772,11 +834,41 @@ Compression:
         def _set_busy(self, value: bool) -> None:
             self.busy = value
 
-        def _finish(self, state: str, model: str, conf: float, ledger: str) -> None:
+        def _finish(self, state: str, model: str, conf: float, ledger: str,
+                    usage: dict | None = None) -> None:
             if not self._buf:
                 self._append_chunk("(empty response)")
             continued = f" · session kept ({self.session_id})" if self.session_id else ""
             self._add(f"── {state} via {model} · conf {conf:.2f}{continued} ──")
+            try:
+                toks = (usage or {}).get("tokens_total", "-")
+                self.query_one("#chat-status", Label).update(
+                    f"{model} · conf {conf:.2f} · tokens {toks} · turn {self.turn}")
+            except Exception:
+                pass
+
+
+    class ChatHelpScreen(Screen):
+        """Key map for the chat console. Esc closes."""
+
+        BINDINGS = [Binding("escape", "pop_screen", "Close")]
+
+        def action_pop_screen(self) -> None:
+            self.app.pop_screen()
+
+        def compose(self) -> ComposeResult:
+            yield Header()
+            yield Label("Chat keys", id="help-title")
+            yield Label(
+                "Enter       send prompt\n"
+                "Up / Down   command history (while typing)\n"
+                "F1          this help\n"
+                "Esc         dashboard — the run keeps going\n"
+                "a           focus chat from anywhere\n"
+                "q / Ctrl+C  quit the TUI",
+                id="help-body",
+            )
+            yield Footer()
 
 
     class J5TUIApp(App):
@@ -938,6 +1030,13 @@ Compression:
         #chat-bar {{
             height: auto;
             margin-top: 1;
+        }}
+        #chat-status {{
+            color: {PALETTE["text_muted"]};
+            padding: 0 1;
+        }}
+        #help-body {{
+            padding: 1 2;
         }}
         #chat-bar Input {{
             width: 1fr;
